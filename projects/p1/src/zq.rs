@@ -9,7 +9,7 @@ use std::{
 
 use num_traits::{Inv, One, Pow, Zero};
 use serde::{Deserialize, Serialize};
-use sfs_bigint::U256;
+use sfs_bigint::{U256, U512};
 
 use crate::{Field, Random, moduli::PrimeModulus};
 
@@ -70,11 +70,22 @@ impl<Q: PrimeModulus> Zq<Q> {
     }
     // returns *self^2
     pub fn square(&self) -> Self {
-        todo!()
+        let square = self.value.widening_mul(&self.value); 
+        let modded_square = square % U512::from(Q::VALUE); 
+        let (low_256, high_256) = modded_square.split(); 
+        debug_assert!(high_256.is_zero(), "Squared result exceeds 256 bits");
+        Self::new_unchecked(low_256)
     }
+
     // Returns *self^3
     pub fn cube(&self) -> Self {
-        todo!()
+        let modulus = U512::from(Q::VALUE);
+        let square = self.value.widening_mul(&self.value) % modulus;
+        let cube = square.mul(U512::from(self.value)) % modulus;
+
+        let (low, high) = cube.split();
+        debug_assert!(high.is_zero(), "Cube result exceeds 256 bits");
+        Self::new_unchecked(low)
     }
 
     //Note that this will just reduce the bytes mod Q; this does _not_ guarantee a uniform distribution!
