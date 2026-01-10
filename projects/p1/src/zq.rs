@@ -248,7 +248,10 @@ impl<Q: PrimeModulus> Add for Zq<Q> {
     /// Example: if `self = 10` and `rhs = 15`, then `borrowing_sub` returns
     /// `(2²⁵⁶ - 5, true)` since the subtraction underflowed.
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        let (sum, carry) = self.value.carrying_add(&rhs.value);
+        let (reduced, borrow) = sum.borrowing_sub(&Q::VALUE);
+        let needs_reduction = carry || !borrow;
+        Self::new_unchecked(if needs_reduction { reduced } else { sum })
     }
 }
 impl<Q: PrimeModulus> Neg for Zq<Q> {
@@ -353,11 +356,17 @@ impl<Q: PrimeModulus> Mul for Zq<Q> {
     /// ```
     /// Splits a 512-bit integer into its low and high 256-bit halves: `(low, high)`.
     fn mul(self, rhs: Self) -> Self::Output {
+        println!(
+            "Self value = {}, right hand multiplier = {}",
+            self.value, &rhs.value
+        );
         let modulus = U512::from(Q::VALUE);
         let product = self.value.widening_mul(&rhs.value);
         let reduced = product % modulus;
+        println!("Modded product = {reduced}");
         let (low, high) = reduced.split();
         debug_assert!(high.is_zero(), "Multiplication result exceeds 256 bits");
+        println!("Final product = {low}");
         Zq::new_unchecked(low)
     }
 }
