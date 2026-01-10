@@ -2,7 +2,7 @@ use std::{
     fmt,
     iter::{self, Product, Sum},
     marker::PhantomData,
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     panic::AssertUnwindSafe,
     str::FromStr,
 };
@@ -70,22 +70,12 @@ impl<Q: PrimeModulus> Zq<Q> {
     }
     // returns *self^2
     pub fn square(&self) -> Self {
-        let square = self.value.widening_mul(&self.value); 
-        let modded_square = square % U512::from(Q::VALUE); 
-        let (low_256, high_256) = modded_square.split(); 
-        debug_assert!(high_256.is_zero(), "Squared result exceeds 256 bits");
-        Self::new_unchecked(low_256)
+        *self * *self
     }
 
     // Returns *self^3
     pub fn cube(&self) -> Self {
-        let modulus = U512::from(Q::VALUE);
-        let square = self.value.widening_mul(&self.value) % modulus;
-        let cube = square.mul(U512::from(self.value)) % modulus;
-
-        let (low, high) = cube.split();
-        debug_assert!(high.is_zero(), "Cube result exceeds 256 bits");
-        Self::new_unchecked(low)
+        *self * *self * *self
     }
 
     //Note that this will just reduce the bytes mod Q; this does _not_ guarantee a uniform distribution!
@@ -165,7 +155,15 @@ impl<Q: PrimeModulus> Pow<u64> for Zq<Q> {
     /// for elliptic curves) to reduce the number of operations from `exp` to
     /// at most `2 · log₂(exp)`.
     fn pow(self, exp: u64) -> Self::Output {
-        todo!()
+        let mut result = Zq::one();
+        let bit_length = 64 - exp.leading_zeros();
+        for i in (0..bit_length).rev() {
+            result = result.square();
+            if exp >> i & 1 == 1 {
+                result = result * self;
+            }
+        }
+        result
     }
 }
 
@@ -176,7 +174,14 @@ impl<Q: PrimeModulus> Pow<U256> for Zq<Q> {
     /// This is the same operation as [`Pow<u64>::pow`], but accepts a 256-bit
     /// exponent. Your implementation should look substantially similar.
     fn pow(self, exp: U256) -> Self::Output {
-        todo!()
+        let mut result = Zq::one();
+        for i in (0..exp.bit_length()).rev() {
+            result = result.square();
+            if exp.bit(i) {
+                result *= self;
+            }
+        }
+        result
     }
 }
 
@@ -348,7 +353,12 @@ impl<Q: PrimeModulus> Mul for Zq<Q> {
     /// ```
     /// Splits a 512-bit integer into its low and high 256-bit halves: `(low, high)`.
     fn mul(self, rhs: Self) -> Self::Output {
-        todo!()
+        let modulus = U512::from(Q::VALUE);
+        let product = self.value.widening_mul(&rhs.value);
+        let reduced = product % modulus;
+        let (low, high) = reduced.split();
+        debug_assert!(high.is_zero(), "Multiplication result exceeds 256 bits");
+        Zq::new_unchecked(low)
     }
 }
 
