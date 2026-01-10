@@ -470,7 +470,21 @@ impl<Q: PrimeModulus> fmt::Display for Zq<Q> {
 /// Equivalently, `⌈log₂(self + 1)⌉` for nonzero values.
 impl<Q: PrimeModulus> Random for Zq<Q> {
     fn random(source: &mut impl rand::Rng) -> Self {
-        todo!()
+        let bit_len = Q::VALUE.bit_length();
+        let num_bytes = bit_len.div_ceil(8);
+        // Using a mask makes sure that, even if we have a very small Q
+        // like 2, we don't reject a huge amount of things (because we can only)
+        // generate values at the granularity of a byte.
+        let mask = U256::MAX >> (256 - bit_len);
+
+        let mut bytes: [u8; 32] = [0u8; U256::BYTES];
+        loop {
+            source.fill_bytes(&mut bytes[..num_bytes]);
+            let generated_value = U256::from_le_slice(&bytes) & mask;
+            if generated_value < Q::VALUE {
+                return Self::new_unchecked(generated_value);
+            }
+        }
     }
 }
 impl<Q: PrimeModulus> Inv for Zq<Q> {
