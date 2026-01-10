@@ -3,6 +3,7 @@ use std::{
     iter::{self, Product, Sum},
     marker::PhantomData,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    panic::AssertUnwindSafe,
     str::FromStr,
 };
 
@@ -238,7 +239,13 @@ impl<Q: PrimeModulus> Neg for Zq<Q> {
     type Output = Zq<Q>;
     /// Computes the additive inverse: `-self mod Q`.
     fn neg(self) -> Self::Output {
-        todo!()
+        let value = if self.value.is_zero() {
+            U256::zero()
+        } else {
+            Q::VALUE - self.value
+        };
+
+        Self::new_unchecked(value)
     }
 }
 
