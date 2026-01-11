@@ -487,6 +487,7 @@ impl<Q: PrimeModulus> Random for Zq<Q> {
         }
     }
 }
+
 impl<Q: PrimeModulus> Inv for Zq<Q> {
     type Output = Zq<Q>;
 
@@ -497,7 +498,32 @@ impl<Q: PrimeModulus> Inv for Zq<Q> {
     ///
     /// Panics if `self` is zero, or more generally if `gcd(self, Q::VALUE) != 1`
     fn inv(self) -> Self::Output {
-        todo!()
+        // Initially, we thought that the extended Euclidean algorithm relied on
+        // the coefficients becoming negative (otherwise reaching 1 would not be
+        // possible). But if we remain in (mod Q) world, the math still works
+        // out. EEA calculates ax + Qy = gcd(a, Q) = 1, where x is the modular
+        // inverse (clearly), and so (in mod world) we would get ax = 1 (mod Q).
+        assert!(!self.is_zero(), "0 has no modular inverse");
+
+        // r values stay as U256 (control GCD computation)
+        // t values are Zq (we only need the coefficient mod Q)
+        let mut r0 = Q::VALUE;
+        let mut r1 = self.value;
+        let mut t0 = Self::zero();
+        let mut t1 = Self::one();
+
+        while !r1.is_zero() {
+            let q = r0 / r1;
+            let q_mod = Self::new(q);
+            // We know none of these values will overflow or underflow because
+            // q * r1 is guaranteed to be in the range 0 < q * r1 < r0
+            (r0, r1) = (r1, r0 - q * r1);
+            // We know that this won't overflow for similar reasons
+            (t0, t1) = (t1, t0 - q_mod * t1);
+        }
+
+        assert!(r0 == U256::one(), "GCD must be 1 for Modular Inverse");
+        t0
     }
 }
 
