@@ -522,7 +522,8 @@ impl<Q: PrimeModulus> Inv for Zq<Q> {
             (t0, t1) = (t1, t0 - q_mod * t1);
         }
 
-        assert!(r0 == U256::one(), "GCD must be 1 for Modular Inverse");
+        // This is guaranteed to be true because Q is Prime
+        debug_assert!(r0 == U256::one(), "GCD must be 1 for Modular Inverse");
         t0
     }
 }
