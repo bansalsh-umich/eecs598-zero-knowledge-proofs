@@ -117,17 +117,17 @@ fn test_to_univariate_1var_poly() {
 fn test_to_univariate_2vars_first_var() {
     let poly = ml_from_evals(2, &[1, 2, 3, 4]);
     let uni = poly.to_univariate(0);
-    let res = poly.partial_eval(&[F13::zero()]) + poly.partial_eval(&[F13::one()]);
-    assert_eq!(res.evaluate(&[F13::zero()]), uni.evaluate(F13::zero()));
-    assert_eq!(res.evaluate(&[F13::one()]), uni.evaluate(F13::one()));
-    assert_eq!(uni.coeffs(), &[F13::from(3), F13::from(4)]);
+    assert_eq!(uni.coeffs(), &[F13::from(4), F13::from(2)]);
 }
 
 #[test]
 fn test_to_univariate_2vars_second_var() {
     let poly = ml_from_evals(2, &[1, 2, 3, 4]);
     let uni = poly.to_univariate(1);
-    assert_eq!(uni.coeffs(), &[F13::from(4), F13::from(2)]);
+    let res = poly.partial_eval(&[F13::zero()]) + poly.partial_eval(&[F13::one()]);
+    assert_eq!(res.evaluate(&[F13::zero()]), uni.evaluate(F13::zero()));
+    assert_eq!(res.evaluate(&[F13::one()]), uni.evaluate(F13::one()));
+    assert_eq!(uni.coeffs(), &[F13::from(3), F13::from(4)]);
 }
 
 #[test]
