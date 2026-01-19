@@ -276,7 +276,12 @@ impl<F: Field> Univariate<F> {
     /// p(x) = c_0 + x·(c_1 + x·(c_2 + ... + x·(c_{n-2} + x·c_{n-1})...))
     /// ```
     pub fn evaluate(&self, x: F) -> F {
-        todo!()
+        let mut result = F::zero();
+        for coeff in self.coeffs.iter().rev() {
+            result *= x;
+            result += *coeff;
+        }
+        result
     }
 }
 
@@ -383,7 +388,19 @@ impl<F: Field> MulAssign<&Univariate<F>> for Univariate<F> {
     ///
     /// The coefficient of `x^k` in the product is `Σ_{i+j=k} self[i] * other[j]`.
     fn mul_assign(&mut self, other: &Self) {
-        todo!()
+        if self.is_zero() || other.is_zero() {
+            self.coeffs = vec![];
+        }
+
+        let new_len = self.coeffs.len() + other.coeffs.len() - 1;
+        let mut new_vec: Vec<F> = vec![F::zero(); new_len]; // Vec::new(0, new_len);
+        for (i, &a) in self.coeffs.iter().enumerate() {
+            for (j, &b) in other.coeffs.iter().enumerate() {
+                new_vec[i + j] += a * b;
+            }
+        }
+        self.coeffs = new_vec;
+        self.trim();
     }
 }
 
@@ -400,7 +417,13 @@ impl<F: Field> MulAssign<F> for Univariate<F> {
     ///
     /// Computes `self := c * self`, scaling every coefficient by `c`.
     fn mul_assign(&mut self, rhs: F) {
-        todo!()
+        if rhs.is_zero() {
+            self.coeffs.clear();
+            return;
+        }
+        for c in &mut self.coeffs {
+            *c *= rhs;
+        }
     }
 }
 
