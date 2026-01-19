@@ -124,8 +124,27 @@ impl<Q: PrimeModulus> Zq<Q> {
     ///
     /// Panics if any element is zero.
     pub fn batch_invert(values: &[Zq<Q>]) -> Vec<Zq<Q>> {
-        // OPTIONAL: replace me with montgomery batch inversion
-        values.iter().map(|val| val.inv()).collect()
+        // // OPTIONAL: replace me with montgomery batch inversion
+        // values.iter().map(|val| val.inv()).collect()
+        if values.is_empty() {
+            return vec![];
+        }
+        let n = values.len();
+        let mut products: Vec<Zq<Q>> = Vec::with_capacity(n);
+        let mut acc = Zq::one();
+        for &v in values {
+            acc *= v;
+            products.push(acc);
+        }
+        let acc_inv = acc.inv();
+        let mut inverses: Vec<Zq<Q>> = vec![Zq::zero(); n];
+        let mut suffix_product = acc_inv;
+        for i in (1..n).rev() {
+            inverses[i] = suffix_product * products[i - 1];
+            suffix_product *= values[i];
+        }
+        inverses[0] = suffix_product;
+        inverses
     }
 
     /// Returns the number of bits needed to represent this value.
@@ -356,17 +375,11 @@ impl<Q: PrimeModulus> Mul for Zq<Q> {
     /// ```
     /// Splits a 512-bit integer into its low and high 256-bit halves: `(low, high)`.
     fn mul(self, rhs: Self) -> Self::Output {
-        println!(
-            "Self value = {}, right hand multiplier = {}",
-            self.value, &rhs.value
-        );
         let modulus = U512::from(Q::VALUE);
         let product = self.value.widening_mul(&rhs.value);
         let reduced = product % modulus;
-        println!("Modded product = {reduced}");
         let (low, high) = reduced.split();
         debug_assert!(high.is_zero(), "Multiplication result exceeds 256 bits");
-        println!("Final product = {low}");
         Zq::new_unchecked(low)
     }
 }
