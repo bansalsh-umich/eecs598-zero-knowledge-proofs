@@ -235,6 +235,7 @@ impl P256Point {
     /// Panics if `scalars.len() != bases.len()`.
     #[inline]
     pub fn msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
+        // TODO: Use Pippenger's algorithm with signed-digit representation for better efficiency.
         assert_eq!(scalars.len(), bases.len());
         let mut running_pt = P256Point::Inf; 
         for i in 0..scalars.len() {
