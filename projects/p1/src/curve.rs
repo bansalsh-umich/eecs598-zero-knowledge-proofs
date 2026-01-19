@@ -9,7 +9,7 @@ use crate::{
     zq::Zq,
 };
 
-use num_traits::Zero;
+use num_traits::{Inv, Zero};
 
 ///The prime defining the underlying field of the curve.
 /// Note that this prime is equal to three mod four,
@@ -196,7 +196,7 @@ impl P256Point {
     /// Returns true iff (x,y) is on the curve. Which is to say, y^2 = x^3 + a256 * x + b256
     #[inline]
     pub fn is_on_curve(x: &Zq<P256>, y: &Zq<P256>) -> bool {
-        todo!()
+        return y.square() == (x.cube() + SECP256R1_A256 * (*x) + SECP256R1_B256);
     }
 
     /// Computes a multi-scalar multiplication (MSM), also known as a linear combination of points.
@@ -238,6 +238,28 @@ impl P256Point {
         assert_eq!(scalars.len(), bases.len());
         todo!()
     }
+
+    /// Doubles the point: `2P`.
+    fn double(&self) -> Self {
+        match self {
+            Self::Inf => Self::Inf,
+            Self::Point { x, y, .. } => {
+                // TODO: Use montgomery multiplication to make these calculations
+                // more efficient.
+                // slope = 3x^2 + a256 / 2y = (3x^2 + a256) * (2y)^-1
+                let numerator = Zq::<P256>::from(3) * x.square() + SECP256R1_A256;
+                let denominator = Zq::<P256>::from(2) * (*y);
+                let slope = numerator * denominator.inv();
+
+                // x' = slope^2 - 2x
+                let x_r = slope.square() - Zq::<P256>::from(2) * (*x);
+
+                // y' = slope * (x - x') - y
+                let y_r = slope * (*x - x_r) - (*y);
+                P256Point::point_unchecked(x_r, y_r)
+            }
+        }
+    }
 }
 
 impl Add for P256Point {
@@ -260,7 +282,24 @@ impl Add for P256Point {
     /// distinguish when `P = Q` vs `P ≠ Q`.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
-        todo!()
+        match (&self, &rhs) {
+            (Self::Inf, _) => return rhs,
+            (_, Self::Inf) => return self,
+            (Self::Point { x: x1, y: y1, .. }, Self::Point { x: x2, y: y2, .. }) => {
+                if x1 == x2 {
+                    if y1 == y2 {
+                        return self.double() 
+                    } else {
+                        debug_assert!(y1 == &(-*y2));
+                        return P256Point::Inf;
+                    }
+                }
+                let slope = (*y1 - *y2)/(*x1 - *x2); 
+                let x3 = (slope.square()) - *x1 - *x2; 
+                let y3 = slope * (*x1 - x3) - *y1; 
+                return P256Point::point_unchecked(x3, y3);
+            }
+        }
     }
 }
 
@@ -274,7 +313,7 @@ impl Sub for P256Point {
     /// This can be implemented trivially using `Add` and `Neg`.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        todo!()
+        self + (-rhs)
     }
 }
 impl Neg for P256Point {
@@ -283,7 +322,10 @@ impl Neg for P256Point {
     /// Computes the additive inverse: `-P`.
     #[inline]
     fn neg(self) -> Self::Output {
-        todo!()
+        match &self {
+            &P256Point::Inf => P256Point::Inf,
+            &P256Point::Point { x, y, .. } => P256Point::point_unchecked(x, -y),
+        }
     }
 }
 
@@ -319,7 +361,17 @@ impl Mul<Zq<P256CurveOrder>> for P256Point {
     /// bit-length of `s`.
     #[inline]
     fn mul(self, rhs: Zq<P256CurveOrder>) -> Self::Output {
-        todo!()
+        if self.is_zero() || rhs.is_zero() {
+            return P256Point::Inf;
+        }
+        let mut result = P256Point::Inf;
+        for i in (0..rhs.bit_length()).rev() {
+            result = result.double();
+            if rhs.bit(i) {
+                result = result + self;
+            }
+        }
+        result
     }
 }
 
@@ -418,3 +470,5 @@ impl FromStr for P256Point {
         Self::point(x, y)
     }
 }
+
+// struct 
