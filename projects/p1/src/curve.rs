@@ -1,6 +1,6 @@
 use std::{
-    iter::Sum,
-    ops::{Add, Mul, Neg, Sub},
+    iter::{Sum},
+    ops::{Add, AddAssign, Mul, Neg, Sub},
     str::FromStr,
 };
 
@@ -236,7 +236,11 @@ impl P256Point {
     #[inline]
     pub fn msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
         assert_eq!(scalars.len(), bases.len());
-        todo!()
+        let mut running_pt = P256Point::Inf; 
+        for i in 0..scalars.len() {
+            running_pt += bases[i] * scalars[i]; 
+        }
+        running_pt 
     }
 
     /// Doubles the point: `2P`.
@@ -300,6 +304,14 @@ impl Add for P256Point {
                 return P256Point::point_unchecked(x3, y3);
             }
         }
+    }
+}
+
+impl AddAssign for P256Point {
+    /// Computes elliptic curve point addition assignment: `P += Q`.
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }
 
@@ -471,4 +483,10 @@ impl FromStr for P256Point {
     }
 }
 
-// struct 
+struct P256Jacobian {
+    x: Zq<P256>,
+    y: Zq<P256>,
+    z: Zq<P256>,
+}
+
+// impl From<

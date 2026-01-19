@@ -2,7 +2,7 @@ use std::{
     fmt,
     iter::{self, Product, Sum},
     marker::PhantomData,
-    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shr, Sub, SubAssign},
     panic::AssertUnwindSafe,
     str::FromStr,
 };
@@ -415,6 +415,28 @@ impl<Q: PrimeModulus> Div for Zq<Q> {
         self * other.inv()
     }
 }
+
+impl<Q> Shr<usize> for Zq<Q> {
+    type Output = Zq<Q>;
+    fn shr(self, rhs: usize) -> Self::Output {
+        Zq::new_unchecked(self.value >> rhs)
+    }
+}
+
+impl<Q> BitAnd<u64> for Zq<Q> {
+    type Output = Zq<Q>;
+    fn bitand(self, rhs: u64) -> Self::Output {
+        Zq::new_unchecked(self.value & rhs.into())
+    }
+}
+
+impl<Q> BitAnd for Zq<Q> {
+    type Output = Zq<Q>;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Zq::new_unchecked(self.value & rhs.value)
+    }
+}
+
 
 impl<Q: PrimeModulus> fmt::Debug for Zq<Q> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
