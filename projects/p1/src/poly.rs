@@ -70,9 +70,35 @@ impl<F: Field> Multilinear<F> {
     /// At each Boolean evaluation point b:
     /// - If bit i of b is 1: contributes factor `g[i]`
     /// - If bit i of b is 0: contributes factor `1 - g[i]`
-    ///
     pub fn eq_tilde(g: &[F]) -> Self {
-        todo!()
+        // 00, 01, 10, 11
+        // [(1 - a)(1 - b), (1 - a)b, a(1 - b), ab]
+
+        // []
+        // [(1 - b), b]
+        // [(1 - b)(1 - a), b(1 - a), (1 - b)a, ba]
+        // [(1 - b)(1 - a)(1 -c), b(1 - a)(1-c), (1 - b)a(1-c), ba(1-c), (1 - b)(1 - a)c, b(1 - a)c, (1 - b)ac, bac]
+
+        let n = g.len();
+        let mut evals = Vec::with_capacity(1 << n);
+        evals.push(F::one());
+
+        for &g_i in g {
+            let one_minus_gi = F::one() - g_i;
+            let len = evals.len();
+            for j in 0..len {
+                let val = evals[j];
+                evals[j] *= one_minus_gi;
+                evals.push(val * g_i);
+            }
+        }
+
+        return Self::new(n, evals)
+
+        // For loop going over all vectors (to access a single vector)
+        // Get a running sum initialized to 0
+        // Another for loop to do formula for each elt within boolean vector
+        // Not sure: Add the running sum (once inner for loop is done) to new multilinear corresponding index of evals 
     }
     /// Evaluates the multilinear polynomial at an arbitrary point in F^n.
     ///
@@ -91,9 +117,11 @@ impl<F: Field> Multilinear<F> {
             size >>= 1;
             let one_minus_value = F::one() - value;
             for i in 0..size {
-                evals[i] = evals[i << 1] * one_minus_value + evals[i << 1 + 1] * value;
+                evals[i] = evals[i << 1] * one_minus_value + evals[(i << 1) + 1] * value;
             }
         }
+
+        evals[0]
     }
 
     /// Partially evaluates the polynomial by fixing the first `k` variables.
@@ -112,34 +140,23 @@ impl<F: Field> Multilinear<F> {
     pub fn partial_eval(&self, partial_point: &[F]) -> Self {
         assert!(partial_point.len() <= self.n_vars);
 
-        let n = self.n_vars;
-        let k = partial_point.len();
-
-        if k.is_zero() {
+        if partial_point.is_empty() {
             return self.clone();
         }
 
-        let new_size = 1 << (n - k);
-        let mut new_vec = vec![F::zero(); new_size];
+        let mut evals = self.evals.clone();
+        let mut size = self.evals.len();
 
-        for (i, &evaluation) in self.evals.iter().enumerate() {
-            let new_index = i >> k;
-            let low_bits = i & ((1 << k) - 1);
-
-            let mut weight = evaluation.clone();
-            for j in 0..k {
-                if low_bits & (1 << j) != 0 {
-                    weight *= partial_point[j];
-                } else {
-                    // so I almost missed this, but the way to consider it is to
-                    // think of the "zer"
-                    weight *= F::one() - partial_point[j];
-                }
+        for &value in partial_point {
+            size >>= 1;
+            let one_minus_value = F::one() - value;
+            for i in 0..size {
+                evals[i] = evals[i << 1] * one_minus_value + evals[(i << 1) + 1] * value;
             }
-            new_vec[new_index] += weight;
         }
 
-        return Self::new(n - k, new_vec);
+        evals.truncate(size);
+        return Self::new(self.n_vars - partial_point.len(), evals);
     }
 
     /// Computes the univariate polynomial obtained by summing over all variables except one.
