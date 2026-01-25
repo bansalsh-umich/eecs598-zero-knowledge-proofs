@@ -481,6 +481,7 @@ impl<F: Field> MulAssign<&Univariate<F>> for Univariate<F> {
     fn mul_assign(&mut self, other: &Self) {
         if self.is_zero() || other.is_zero() {
             self.coeffs = vec![];
+            return;
         }
 
         let new_len = self.coeffs.len() + other.coeffs.len() - 1;
