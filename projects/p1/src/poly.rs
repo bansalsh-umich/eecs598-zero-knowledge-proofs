@@ -83,7 +83,17 @@ impl<F: Field> Multilinear<F> {
     /// This function panics if `self.n_vars != point.len()`
     pub fn evaluate(&self, point: &[F]) -> F {
         assert!(self.n_vars == point.len());
-        todo!()
+        
+        let mut evals = self.evals.clone();
+        let mut size = evals.len();
+        
+        for &value in point {
+            size >>= 1;
+            let one_minus_value = F::one() - value;
+            for i in 0..size {
+                evals[i] = evals[i << 1] * one_minus_value + evals[i << 1 + 1] * value;
+            }
+        }
     }
 
     /// Partially evaluates the polynomial by fixing the first `k` variables.
@@ -101,7 +111,35 @@ impl<F: Field> Multilinear<F> {
     /// This function panics if `partial_point.len() > self.n_vars`
     pub fn partial_eval(&self, partial_point: &[F]) -> Self {
         assert!(partial_point.len() <= self.n_vars);
-        todo!()
+
+        let n = self.n_vars;
+        let k = partial_point.len();
+
+        if k.is_zero() {
+            return self.clone();
+        }
+
+        let new_size = 1 << (n - k);
+        let mut new_vec = vec![F::zero(); new_size];
+
+        for (i, &evaluation) in self.evals.iter().enumerate() {
+            let new_index = i >> k;
+            let low_bits = i & ((1 << k) - 1);
+
+            let mut weight = evaluation.clone();
+            for j in 0..k {
+                if low_bits & (1 << j) != 0 {
+                    weight *= partial_point[j];
+                } else {
+                    // so I almost missed this, but the way to consider it is to
+                    // think of the "zer"
+                    weight *= F::one() - partial_point[j];
+                }
+            }
+            new_vec[new_index] += weight;
+        }
+
+        return Self::new(n - k, new_vec);
     }
 
     /// Computes the univariate polynomial obtained by summing over all variables except one.
@@ -113,10 +151,22 @@ impl<F: Field> Multilinear<F> {
     /// ```text
     /// g(X) = Σ_{b ∈ {0,1}^{n-1}} p(b_0, ..., b_{j-1}, X, b_{j+1}, ..., b_{n-1})
     /// ```
-    ///
     /// where `j = variable_index`.
     pub fn to_univariate(&self, variable_index: usize) -> Univariate<F> {
-        todo!()
+        assert!(variable_index < self.n_vars);
+        let mut fixed1_sum = F::zero(); 
+        let mut fixed0_sum = F::zero(); 
+        for (i, &evaluation) in self.evals.iter().enumerate() {
+            if i & (1 << variable_index) != 0 {
+                fixed1_sum += evaluation; 
+            }
+            else {
+                fixed0_sum += evaluation;
+            }
+        }
+        let polycoefficient = fixed1_sum - fixed0_sum; 
+        let evals = vec![fixed0_sum, polycoefficient];
+        Univariate::new(evals)
     }
 }
 
@@ -139,7 +189,11 @@ impl<F: Field> AddAssign<&Multilinear<F>> for Multilinear<F> {
     /// Panics if `self.n_vars != rhs.n_vars`.
     fn add_assign(&mut self, rhs: &Self) {
         assert_eq!(self.n_vars, rhs.n_vars);
-        todo!()
+        debug_assert_eq!(self.evals.len(), rhs.evals.len());
+
+        for (a, b) in self.evals.iter_mut().zip(&rhs.evals) {
+            *a += *b;
+        }
     }
 }
 impl<F: Field> SubAssign<&Multilinear<F>> for Multilinear<F> {
@@ -153,7 +207,11 @@ impl<F: Field> SubAssign<&Multilinear<F>> for Multilinear<F> {
     /// Panics if `self.n_vars != rhs.n_vars`.
     fn sub_assign(&mut self, rhs: &Self) {
         assert_eq!(self.n_vars, rhs.n_vars);
-        todo!()
+        debug_assert_eq!(self.evals.len(), rhs.evals.len());
+
+        for (a, b) in self.evals.iter_mut().zip(&rhs.evals) {
+            *a -= *b;
+        }
     }
 }
 
@@ -261,8 +319,24 @@ impl<F: Field> Univariate<F> {
     /// x-coordinates, there exists a unique polynomial `p(x)` of degree at most `n - 1`
     /// such that `p(x_i) = y_i` for all `i`.
     pub fn interpolate(points: &[(F, F)]) -> Self {
+        // TODO: Add synthetic division for O(n^2)
         assert!(!points.is_empty(), "need at least one point");
-        todo!()
+        let mut result = Self::zero();
+
+        for (i, &(x_i, y_i)) in points.iter().enumerate() {
+            // Lagrange basis polynomial computation.
+            let mut basis_numerator = Self::constant(F::one());
+            let mut basis_denominator = F::one();
+            for (j, &(x_j, _)) in points.iter().enumerate() {
+                if i != j {
+                    basis_numerator *= &Self::new(vec![-x_j, F::one()]);
+                    basis_denominator *= x_i - x_j;
+                }
+            }
+            result += &(basis_numerator * (y_i / basis_denominator));
+        }
+
+        result
     }
 
     /// Computes `p(x) = c_0 + c_1·x + c_2·x² + ... + c_{n-1}·x^{n-1}` for the
