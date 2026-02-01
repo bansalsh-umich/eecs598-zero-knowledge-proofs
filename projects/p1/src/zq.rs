@@ -849,34 +849,22 @@ impl<Q: PrimeModulus> Pow<U256> for MontgomeryZq<Q> {
 
 impl<Q: PrimeModulus> Inv for MontgomeryZq<Q> {
     type Output = Self;
-    /// Modular inverse via extended Euclidean algorithm on the raw value.
+    /// Computes the modular inverse using Fermat's Little Theorem.
     ///
-    /// EEA on the raw value to get (x*r)^-1 = x^-1 * r^-1 mod n, then one
-    /// Montgomery multiply by r^2 to correct: REDC(x^-1 * r^-1 * r^2) = x^-1 * r mod n.
+    /// This is strictly faster than EEA for 256-bit integers because it avoids
+    /// expensive U256 divisions, replacing them with Montgomery multiplications.
+    ///
+    /// Formula: x^(P-2) mod P = x^-1 mod P
     fn inv(self) -> Self::Output {
-        assert!(!self.value.is_zero(), "0 has no modular inverse");
-
-        let n = Q::VALUE;
-        let n_wide = U512::from(n);
-        let mut r0 = n;
-        let mut r1 = self.value;
-        let mut t0 = U256::zero();
-        let mut t1 = U256::one();
-
-        while !r1.is_zero() {
-            let q = r0 / r1;
-            (r0, r1) = (r1, r0 - q * r1);
-            // t update in mod n arithmetic using borrowing_sub / carrying_add
-            let qt1 = (q.widening_mul(&t1) % n_wide).split().0;
-            let (diff, borrow) = t0.borrowing_sub(&qt1);
-            t0 = t1;
-            t1 = if borrow { diff.carrying_add(&n).0 } else { diff };
-        }
-
-        debug_assert!(r0 == U256::one(), "GCD must be 1 for Modular Inverse");
-        // t0 = (x*r)^-1 mod n. Multiply by r^2 to get x^-1 * r mod n.
-        let product = t0.widening_mul(Q::montgomery_r2_mod_n());
-        Self::redc(product)
+        // We assert self is not zero, as 0 has no inverse.
+        assert!(!self.is_zero(), "0 has no modular inverse");
+        
+        // P - 2
+        let exp = Q::VALUE - U256::from(2u64);
+        
+        // This implicitly computes (xR)^(P-2) in Montgomery space,
+        // which results in (x^(P-2))R = x^-1 * R mod P.
+        self.pow(exp)
     }
 }
 
