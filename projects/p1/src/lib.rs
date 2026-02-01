@@ -53,6 +53,7 @@ pub trait Field:
     + Serialize
     + DeserializeOwned
     + 'static
+    + Random
 {
     type Order: moduli::PrimeModulus;
 }

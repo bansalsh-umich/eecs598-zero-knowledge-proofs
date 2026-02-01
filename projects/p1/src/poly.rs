@@ -55,6 +55,10 @@ impl<F: Field> Multilinear<F> {
         Self { n_vars, evals }
     }
 
+    pub fn num_vars(&self) -> usize {
+        self.n_vars
+    }
+
     /// Constructs the multilinear extension of the equality polynomial, ẽq(x, g).
     ///
     /// The equality polynomial `eq(x, y)` evaluates to 1 when `x = y` (for binary vectors)
