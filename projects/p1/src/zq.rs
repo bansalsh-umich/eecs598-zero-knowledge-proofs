@@ -1,9 +1,8 @@
 use std::{
     fmt,
-    iter::{self, Product, Sum},
+    iter::{Product, Sum},
     marker::PhantomData,
     ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shr, Sub, SubAssign},
-    panic::AssertUnwindSafe,
     str::FromStr,
 };
 
@@ -437,7 +436,6 @@ impl<Q> BitAnd for Zq<Q> {
     }
 }
 
-
 impl<Q: PrimeModulus> fmt::Debug for Zq<Q> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} (mod {})", self.value, Q::VALUE)
@@ -636,7 +634,6 @@ impl<Q> Default for Zq<Q> {
     }
 }
 
-
 /// An element of Z/QZ stored in Montgomery form.
 ///
 /// Instead of storing x directly, we store x_bar = x * r mod n where r = 2^256
@@ -672,7 +669,9 @@ impl<Q: PrimeModulus> MontgomeryZq<Q> {
     ///   4. if result < 0, add n         (at most one correction needed)
     fn redc(x: U512) -> Self {
         let x_high = x.split().1;
-        let q = ((x.split().0).widening_mul(Q::montgomery_n_prime())).split().0;
+        let q = ((x.split().0).widening_mul(Q::montgomery_n_prime()))
+            .split()
+            .0;
         let m = q.widening_mul(&Q::VALUE).split().1;
         let (result, borrow) = x_high.borrowing_sub(&m);
         if borrow {
@@ -858,10 +857,10 @@ impl<Q: PrimeModulus> Inv for MontgomeryZq<Q> {
     fn inv(self) -> Self::Output {
         // We assert self is not zero, as 0 has no inverse.
         assert!(!self.is_zero(), "0 has no modular inverse");
-        
+
         // P - 2
         let exp = Q::VALUE - U256::from(2u64);
-        
+
         // This implicitly computes (xR)^(P-2) in Montgomery space,
         // which results in (x^(P-2))R = x^-1 * R mod P.
         self.pow(exp)
