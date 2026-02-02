@@ -244,33 +244,22 @@ impl P256Point {
     pub fn msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
         // TODO: Use Pippenger's algorithm with signed-digit representation for better efficiency.
         assert_eq!(scalars.len(), bases.len());
-        let mut running_pt = P256Point::Inf;
+        let mut acc = P256Jacobian::identity();
         for i in 0..scalars.len() {
-            running_pt += bases[i] * scalars[i];
+            let base = P256Jacobian::from(bases[i]);
+            acc += base.scalar_mul(scalars[i]);
         }
-        running_pt
+        P256Point::from(acc)
     }
 
     /// Doubles the point: `2P`.
+    /// Delegates to Jacobian doubling to avoid a modular inversion.
     fn double(&self) -> Self {
         match self {
             Self::Inf => Self::Inf,
-            Self::Point { x, y, .. } => {
-                let mx = MontgomeryZq::<P256>::from(*x);
-                let my = MontgomeryZq::<P256>::from(*y);
-
-                let numerator =
-                    MontgomeryZq::<P256>::from(3) * mx.square() + *secp256r1_a256_montgomery();
-                let denominator = MontgomeryZq::<P256>::from(2) * my;
-
-                let slope = numerator * denominator.inv();
-
-                // x' = slope^2 - 2x
-                let x_r = slope.square() - MontgomeryZq::<P256>::from(2) * mx;
-
-                // y' = slope * (x - x') - y
-                let y_r = slope * (mx - x_r) - my;
-                P256Point::point_unchecked(x_r.into(), y_r.into())
+            _ => {
+                let j = P256Jacobian::from(*self);
+                P256Point::from(j.double())
             }
         }
     }
@@ -294,29 +283,16 @@ impl Add for P256Point {
     ///
     /// The formulas for the chord and tangent cases differ—make sure to
     /// distinguish when `P = Q` vs `P ≠ Q`.
+    /// Delegates to Jacobian addition to avoid a modular inversion.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         match (&self, &rhs) {
-            (Self::Inf, _) => return rhs,
-            (_, Self::Inf) => return self,
-            (Self::Point { x: x1, y: y1, .. }, Self::Point { x: x2, y: y2, .. }) => {
-                if x1 == x2 {
-                    if y1 == y2 {
-                        return self.double();
-                    } else {
-                        debug_assert!(y1 == &(-*y2));
-                        return P256Point::Inf;
-                    }
-                }
-                let mx1 = MontgomeryZq::<P256>::from(*x1);
-                let my1 = MontgomeryZq::<P256>::from(*y1);
-                let mx2 = MontgomeryZq::<P256>::from(*x2);
-                let my2 = MontgomeryZq::<P256>::from(*y2);
-
-                let slope = (my1 - my2) / (mx1 - mx2);
-                let x3 = slope.square() - mx1 - mx2;
-                let y3 = slope * (mx1 - x3) - my1;
-                return P256Point::point_unchecked(x3.into(), y3.into());
+            (Self::Inf, _) => rhs,
+            (_, Self::Inf) => self,
+            _ => {
+                let j1 = P256Jacobian::from(self);
+                let j2 = P256Jacobian::from(rhs);
+                P256Point::from(j1 + j2)
             }
         }
     }
@@ -386,19 +362,13 @@ impl Mul<Zq<P256CurveOrder>> for P256Point {
     ///
     /// This reduces the number of operations to at most `2k` where `k` is the
     /// bit-length of `s`.
+    /// Uses Jacobian coordinates with mixed addition throughout, converting
+    /// back to affine only at the end. This avoids ~256 modular inversions
+    /// compared to the affine double-and-add approach.
     #[inline]
     fn mul(self, rhs: Zq<P256CurveOrder>) -> Self::Output {
-        if self.is_zero() || rhs.is_zero() {
-            return P256Point::Inf;
-        }
-        let mut result = P256Point::Inf;
-        for i in (0..rhs.bit_length()).rev() {
-            result = result.double();
-            if rhs.bit(i) {
-                result = result + self;
-            }
-        }
-        result
+        let base = P256Jacobian::from(self);
+        P256Point::from(base.scalar_mul(rhs))
     }
 }
 
@@ -513,6 +483,19 @@ impl P256Jacobian {
             z: MontgomeryZq::zero(),
         }
     }
+
+    /// Scalar multiplication via double-and-add in Jacobian coordinates.
+    /// Works for any Z (not just Z=1).
+    fn scalar_mul(&self, scalar: Zq<P256CurveOrder>) -> Self {
+        let mut result = P256Jacobian::identity();
+        for i in (0..scalar.bit_length()).rev() {
+            result = result.double();
+            if scalar.bit(i) {
+                result = result.add_impl(self);
+            }
+        }
+        result
+    }
 }
 
 impl From<P256Point> for P256Jacobian {
@@ -592,10 +575,12 @@ impl P256Jacobian {
     }
 }
 
-impl Add for P256Jacobian {
-    type Output = P256Jacobian;
-
-    /// Computes Point Addition when both points are in Jacobian coordinates
+impl P256Jacobian {
+    /// Core addition logic operating on references to avoid copying
+    /// two full 96-byte Jacobian points up front. Individual 32-byte
+    /// MontgomeryZq fields are copied on access (unavoidable since
+    /// MontgomeryZq arithmetic is by-value), but we never memcpy
+    /// the entire struct.
     ///
     /// Computes P3 = P1 + P2, where P1 = (X1, Y1, Z1) and P2 = (X2, Y2, Z2).
     ///
@@ -619,12 +604,23 @@ impl Add for P256Jacobian {
     /// We define the delta values:
     ///   H = U2 - U1
     ///   r = 2 * (S2 - S1) (the scaling is for an optimization)
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add_impl(&self, rhs: &Self) -> Self {
         if self.z.is_zero() {
-            return rhs;
+            return *rhs;
         }
         if rhs.z.is_zero() {
-            return self;
+            return *self;
+        }
+
+        // If either operand has Z=1, use the cheaper mixed addition
+        // (~8 muls + 3 sqrs vs ~12 muls + 4 sqrs). This is the common
+        // case in scalar_mul where the base point stays affine.
+        let one = MontgomeryZq::<P256>::one();
+        if rhs.z == one {
+            return self.add_mixed(rhs.x, rhs.y);
+        }
+        if self.z == one {
+            return rhs.add_mixed(self.x, self.y);
         }
 
         // Normalize
@@ -692,9 +688,7 @@ impl Add for P256Jacobian {
             z: z3,
         }
     }
-}
 
-impl P256Jacobian {
     /// Mixed Point Addition: adds a Jacobian point to an Affine point
     ///
     /// Computes P3 = P1 + P2, where P1 = (X1, Y1, Z1) in Jacobian coordinates
@@ -759,9 +753,32 @@ impl P256Jacobian {
     }
 }
 
+impl Add for P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        self.add_impl(&rhs)
+    }
+}
+
 impl Add for &P256Jacobian {
     type Output = P256Jacobian;
+    #[inline]
     fn add(self, rhs: &P256Jacobian) -> P256Jacobian {
-        *self + *rhs
+        self.add_impl(rhs)
+    }
+}
+
+impl AddAssign<&P256Jacobian> for P256Jacobian {
+    #[inline]
+    fn add_assign(&mut self, rhs: &P256Jacobian) {
+        *self = self.add_impl(rhs);
+    }
+}
+
+impl AddAssign for P256Jacobian {
+    #[inline]
+    fn add_assign(&mut self, rhs: P256Jacobian) {
+        *self = self.add_impl(&rhs);
     }
 }
