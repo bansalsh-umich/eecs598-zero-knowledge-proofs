@@ -52,6 +52,17 @@ pub const SECP256R1_G_Y: Zq<P256> = Zq::from_str_unchecked(
 
 pub const SECP256R1_G: P256Point = P256Point::point_unchecked(SECP256R1_G_X, SECP256R1_G_Y);
 
+/// Extracts w bits from a scalar starting at bit `start`, returned as a u64.
+fn extract_window(scalar: &Zq<P256CurveOrder>, start: usize, w: usize) -> u64 {
+    let mut digit = 0u64;
+    for k in 0..w {
+        if start + k < 256 && scalar.bit(start + k) {
+            digit |= 1 << k;
+        }
+    }
+    digit
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct PrivateZST;
 
@@ -242,26 +253,62 @@ impl P256Point {
     /// Panics if `scalars.len() != bases.len()`.
     #[inline]
     pub fn msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
-        // TODO: Use Pippenger's algorithm with signed-digit representation for better efficiency.
+        // TODO: half memory usage with signed-digit representation?
         assert_eq!(scalars.len(), bases.len());
-        let mut acc = P256Jacobian::identity();
-        for i in 0..scalars.len() {
-            let base = P256Jacobian::from(bases[i]);
-            acc += base.scalar_mul(scalars[i]);
+        let n = scalars.len();
+
+        if n < 4 {
+            return P256Point::naive_msm(scalars, bases);
         }
-        P256Point::from(acc)
+
+        let window_width: usize = {
+            let log2_ceil = usize::BITS as usize - (n - 1).leading_zeros() as usize;
+            log2_ceil.clamp(2, 16)
+        };
+
+        let num_buckets = (1usize << window_width) - 1; // unsigned digits 1..=2^w-1
+        let num_windows = 256usize.div_ceil(window_width);
+
+        let jac_bases: Vec<P256Jacobian> =
+            bases.iter().map(|p| P256Jacobian::from(*p)).collect();
+
+        let mut buckets = vec![P256Jacobian::identity(); num_buckets + 1];
+        let mut result = P256Jacobian::identity();
+
+        for j in (0..num_windows).rev() {
+            for _ in 0..window_width {
+                result = result.double();
+            }
+
+            buckets.fill(P256Jacobian::identity());
+            for i in 0..n {
+                let digit = extract_window(&scalars[i], j * window_width, window_width);
+                if digit == 0 {
+                    continue;
+                }
+                buckets[digit as usize] += &jac_bases[i];
+            }
+
+            let mut running = P256Jacobian::identity();
+            let mut window_sum = P256Jacobian::identity();
+            for b in (1..=num_buckets).rev() {
+                running += &buckets[b];
+                window_sum += &running;
+            }
+
+            result += &window_sum;
+        }
+
+        P256Point::from(result)
     }
 
-    /// Doubles the point: `2P`.
-    /// Delegates to Jacobian doubling to avoid a modular inversion.
-    fn double(&self) -> Self {
-        match self {
-            Self::Inf => Self::Inf,
-            _ => {
-                let j = P256Jacobian::from(*self);
-                P256Point::from(j.double())
-            }
+    fn naive_msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
+        debug_assert_eq!(scalars.len(), bases.len());
+        let mut acc = P256Point::zero();
+        for i in 0..scalars.len() {
+            acc += bases[i] * scalars[i];
         }
+        acc
     }
 }
 
