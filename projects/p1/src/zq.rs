@@ -2,7 +2,7 @@ use std::{
     fmt,
     iter::{Product, Sum},
     marker::PhantomData,
-    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shr, Sub, SubAssign},
+    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shl, ShlAssign, Shr, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -867,6 +867,30 @@ impl<Q: PrimeModulus> Inv for MontgomeryZq<Q> {
     }
 }
 
+impl<Q: PrimeModulus> Shl<usize> for MontgomeryZq<Q> {
+    type Output = Self;
+
+    /// Computes modular left shift: `self * 2^shift mod Q`.
+    ///
+    /// This is implemented as repeated doubling (addition), which is significantly
+    /// faster than Montgomery multiplication for small shifts.
+    fn shl(self, shift: usize) -> Self::Output {
+        let mut result = self;
+        for _ in 0..shift {
+            result = result + result;
+        }
+        result
+    }
+}
+
+impl<Q: PrimeModulus> ShlAssign<usize> for MontgomeryZq<Q> {
+    fn shl_assign(&mut self, shift: usize) {
+        for _ in 0..shift {
+            *self = *self + *self;
+        }
+    }
+}
+
 impl<Q: PrimeModulus> From<u64> for MontgomeryZq<Q> {
     fn from(value: u64) -> Self {
         MontgomeryZq::from(Zq::<Q>::from(value))
@@ -927,5 +951,18 @@ impl<Q: PrimeModulus> std::hash::Hash for MontgomeryZq<Q> {
 impl<Q: PrimeModulus> Default for MontgomeryZq<Q> {
     fn default() -> Self {
         MontgomeryZq::from_montgomery_unchecked(U256::default())
+    }
+}
+
+impl<Q: PrimeModulus> fmt::Debug for MontgomeryZq<Q> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let normal: Zq<Q> = Zq::from(*self);
+        write!(f, "{} (mod {})", normal.as_int(), Q::VALUE)
+    }
+}
+
+impl<Q: PrimeModulus> fmt::Display for MontgomeryZq<Q> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
