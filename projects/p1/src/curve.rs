@@ -782,3 +782,27 @@ impl AddAssign for P256Jacobian {
         *self = self.add_impl(&rhs);
     }
 }
+
+impl Neg for P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        P256Jacobian {
+            x: self.x,
+            y: -self.y,
+            z: self.z,
+        }
+    }
+}
+
+impl Neg for &P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        P256Jacobian {
+            x: self.x,
+            y: -self.y,
+            z: self.z,
+        }
+    }
+}
