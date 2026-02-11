@@ -185,7 +185,21 @@ impl<F: Field> InteractiveProof for Protocol<F> {
         g: Self::Witness,
         mut comms: Comms<Self::ProverMessage, Self::VerifierMessage>,
     ) -> ip::Result<Self::ProverOutput> {
-        todo!()
+        let mut challenges = vec![];
+        challenges.reserve(stmt.num_vars);
+
+        let mut g_prev = g;
+
+        for _ in 0..stmt.num_vars {
+            let g_i = g_prev.to_univariate(0);
+            comms.send(g_i)?;
+
+            let r_i = comms.recv().await?;
+            g_prev = g_prev.partial_eval(std::slice::from_ref(&r_i));
+            challenges.push(r_i);
+        }
+
+        Ok(challenges)
     }
 
     /// The sumcheck verifier algorithm.
@@ -227,6 +241,28 @@ impl<F: Field> InteractiveProof for Protocol<F> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<Self::VerifierOutput> {
-        todo!()
+        // TODO
+        let mut vec_random = vec![];
+        vec_random.reserve(stmt.num_vars);
+
+        let mut current_claimed_sum = stmt.claimed_sum;
+
+        for _ in 0..stmt.num_vars {
+            let g_i = comms.recv().await?;
+            // if g_i.degree() > stmt.max_degree {
+            //     bail!("degree too high\n");
+            // }
+
+            let total = g_i.evaluate(F::zero()) + g_i.evaluate(F::one());
+            if total != current_claimed_sum {
+                bail!("Sum not equal to proposed\n");
+            }
+
+            let r_i = F::random(rng);
+            current_claimed_sum = g_i.evaluate(r_i);
+            vec_random.push(r_i);
+        }
+
+        Ok((current_claimed_sum, vec_random))
     }
 }
