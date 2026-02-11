@@ -259,6 +259,7 @@ impl<F: Field> InteractiveProof for Protocol<F> {
             }
 
             let r_i = F::random(rng);
+            comms.send(r_i)?;
             current_claimed_sum = g_i.evaluate(r_i);
             vec_random.push(r_i);
         }
