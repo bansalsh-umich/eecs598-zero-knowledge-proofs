@@ -1,9 +1,8 @@
 use std::{
     fmt,
-    iter::{self, Product, Sum},
+    iter::{Product, Sum},
     marker::PhantomData,
-    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shr, Sub, SubAssign},
-    panic::AssertUnwindSafe,
+    ops::{Add, AddAssign, BitAnd, Div, DivAssign, Mul, MulAssign, Neg, Shl, ShlAssign, Shr, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -437,7 +436,6 @@ impl<Q> BitAnd for Zq<Q> {
     }
 }
 
-
 impl<Q: PrimeModulus> fmt::Debug for Zq<Q> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} (mod {})", self.value, Q::VALUE)
@@ -633,5 +631,338 @@ impl<Q> std::hash::Hash for Zq<Q> {
 impl<Q> Default for Zq<Q> {
     fn default() -> Self {
         Zq::new_unchecked(U256::default())
+    }
+}
+
+/// An element of Z/QZ stored in Montgomery form.
+///
+/// Instead of storing x directly, we store x_bar = x * r mod n where r = 2^256
+/// and n = Q::VALUE. This makes multiplication much cheaper: instead of dividing
+/// by n (expensive), we divide by r (free -- just discard low 256 bits).
+pub struct MontgomeryZq<Q> {
+    value: U256,
+    _modulus: PhantomData<Q>,
+}
+
+impl<Q: PrimeModulus> MontgomeryZq<Q> {
+    /// Wraps a raw U256 that is *already* in Montgomery form (i.e. already
+    /// represents x*r mod n). No reduction is performed.
+    const fn from_montgomery_unchecked(value: U256) -> Self {
+        MontgomeryZq {
+            value,
+            _modulus: PhantomData,
+        }
+    }
+}
+
+impl<Q: PrimeModulus> MontgomeryZq<Q> {
+    /// Montgomery reduction (REDC): given a U512 value x, compute x * r^(-1) mod n.
+    ///
+    /// This is the core operation. It replaces division-by-n with division-by-r
+    /// (a free bit-shift) by finding a multiple of n that zeroes out the low 256
+    /// bits of x.
+    ///
+    /// Algorithm:
+    ///   1. q = x_low * n' mod 2^256   (find the right multiple of n)
+    ///   2. (x - q*n) has its low 256 bits all zero by construction
+    ///   3. result = (x - q*n) / 2^256  (just take the high half)
+    ///   4. if result < 0, add n         (at most one correction needed)
+    fn redc(x: U512) -> Self {
+        let x_high = x.split().1;
+        let q = ((x.split().0).widening_mul(Q::montgomery_n_prime()))
+            .split()
+            .0;
+        let m = q.widening_mul(&Q::VALUE).split().1;
+        let (result, borrow) = x_high.borrowing_sub(&m);
+        if borrow {
+            MontgomeryZq::from_montgomery_unchecked(result.carrying_add(&Q::VALUE).0)
+        } else {
+            MontgomeryZq::from_montgomery_unchecked(result)
+        }
+    }
+
+    /// Returns self^2 in Montgomery space.
+    pub fn square(&self) -> Self {
+        *self * *self
+    }
+}
+
+impl<Q: PrimeModulus> From<Zq<Q>> for MontgomeryZq<Q> {
+    /// Convert from normal form to Montgomery form: x -> x * r mod n.
+    ///
+    /// Uses the precomputed r^2 mod n constant:
+    ///   x_bar = REDC(x * r^2) = x * r^2 * r^(-1) mod n = x * r mod n
+    fn from(zq: Zq<Q>) -> Self {
+        let r2 = *Q::montgomery_r2_mod_n();
+        // x * r^2 as a full 512-bit product, then REDC to get x * r mod n
+        let product = zq.value.widening_mul(&r2);
+        Self::redc(product)
+    }
+}
+
+impl<Q: PrimeModulus> From<MontgomeryZq<Q>> for Zq<Q> {
+    /// Convert from Montgomery form back to normal form: x_bar -> x_bar * r^(-1) mod n = x.
+    ///
+    /// This is just REDC applied to x_bar (treated as a 512-bit number with high half = 0).
+    fn from(mont: MontgomeryZq<Q>) -> Self {
+        let reduced: MontgomeryZq<Q> = MontgomeryZq::redc(U512::from(mont.value));
+        Zq::new_unchecked(reduced.value)
+    }
+}
+
+impl<Q: PrimeModulus> Add for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Modular addition -- identical to Zq::add since Montgomery form is linear:
+    ///   x_bar + y_bar = (x + y) * r mod n
+    fn add(self, rhs: Self) -> Self::Output {
+        let (sum, carry) = self.value.carrying_add(&rhs.value);
+        let (reduced, borrow) = sum.borrowing_sub(&Q::VALUE);
+        let needs_reduction = carry || !borrow;
+        MontgomeryZq::from_montgomery_unchecked(if needs_reduction { reduced } else { sum })
+    }
+}
+
+impl<Q: PrimeModulus> Sub for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Modular subtraction -- identical to Zq::sub since Montgomery form is linear:
+    ///   x_bar - y_bar = (x - y) * r mod n
+    fn sub(self, rhs: Self) -> Self::Output {
+        let (tentative_diff, underflow) = self.value.borrowing_sub(&rhs.value);
+        MontgomeryZq::from_montgomery_unchecked(if underflow {
+            tentative_diff.carrying_add(&Q::VALUE).0
+        } else {
+            tentative_diff
+        })
+    }
+}
+
+impl<Q: PrimeModulus> Neg for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Additive inverse -- identical to Zq::neg: if zero return zero, else n - value.
+    fn neg(self) -> Self::Output {
+        let value = if self.value.is_zero() {
+            U256::zero()
+        } else {
+            Q::VALUE - self.value
+        };
+
+        MontgomeryZq::from_montgomery_unchecked(value)
+    }
+}
+
+impl<Q: PrimeModulus> Mul for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Montgomery multiplication: x_bar * y_bar * r^(-1) mod n = (x * y) * r mod n.
+    ///
+    /// This is where Montgomery pays off -- one widening multiply + REDC,
+    /// no division by n anywhere.
+    fn mul(self, rhs: Self) -> Self::Output {
+        let product = self.value.widening_mul(&rhs.value);
+        Self::redc(product)
+    }
+}
+
+impl<Q: PrimeModulus> Div for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Division via multiplication by the inverse.
+    #[expect(clippy::suspicious_arithmetic_impl)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self * rhs.inv()
+    }
+}
+
+impl<Q: PrimeModulus> AddAssign for MontgomeryZq<Q> {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl<Q: PrimeModulus> SubAssign for MontgomeryZq<Q> {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
+
+impl<Q: PrimeModulus> MulAssign for MontgomeryZq<Q> {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = *self * rhs;
+    }
+}
+
+impl<Q: PrimeModulus> DivAssign for MontgomeryZq<Q> {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = *self / rhs;
+    }
+}
+
+// -- Identity elements --------------------------------------------------------
+
+impl<Q: PrimeModulus> Zero for MontgomeryZq<Q> {
+    /// Zero in Montgomery form: 0 * r = 0.
+    fn zero() -> Self {
+        Self::from_montgomery_unchecked(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.value.is_zero()
+    }
+}
+
+impl<Q: PrimeModulus> One for MontgomeryZq<Q> {
+    /// One in Montgomery form: 1 * r mod n = r mod n (precomputed).
+    fn one() -> Self {
+        Self::from_montgomery_unchecked(*Q::montgomery_r_mod_n())
+    }
+}
+
+impl<Q: PrimeModulus> Pow<u64> for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Square-and-multiply exponentiation, entirely in Montgomery space.
+    fn pow(self, exp: u64) -> Self::Output {
+        let mut result = Self::one();
+        let bit_length = u64::BITS - exp.leading_zeros();
+        for i in (0..bit_length).rev() {
+            result = result.square();
+            if exp >> i & 1 == 1 {
+                result = result * self;
+            }
+        }
+        result
+    }
+}
+
+impl<Q: PrimeModulus> Pow<U256> for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Square-and-multiply exponentiation with a 256-bit exponent.
+    fn pow(self, exp: U256) -> Self::Output {
+        let mut result = Self::one();
+        for i in (0..exp.bit_length()).rev() {
+            result = result.square();
+            if exp.bit(i) {
+                result = result * self;
+            }
+        }
+        result
+    }
+}
+
+impl<Q: PrimeModulus> Inv for MontgomeryZq<Q> {
+    type Output = Self;
+    /// Computes the modular inverse using Fermat's Little Theorem.
+    ///
+    /// This is strictly faster than EEA for 256-bit integers because it avoids
+    /// expensive U256 divisions, replacing them with Montgomery multiplications.
+    ///
+    /// Formula: x^(P-2) mod P = x^-1 mod P
+    fn inv(self) -> Self::Output {
+        // We assert self is not zero, as 0 has no inverse.
+        assert!(!self.is_zero(), "0 has no modular inverse");
+
+        // P - 2
+        let exp = Q::VALUE - U256::from(2u64);
+
+        // This implicitly computes (xR)^(P-2) in Montgomery space,
+        // which results in (x^(P-2))R = x^-1 * R mod P.
+        self.pow(exp)
+    }
+}
+
+impl<Q: PrimeModulus> Shl<usize> for MontgomeryZq<Q> {
+    type Output = Self;
+
+    /// Computes modular left shift: `self * 2^shift mod Q`.
+    ///
+    /// This is implemented as repeated doubling (addition), which is significantly
+    /// faster than Montgomery multiplication for small shifts.
+    fn shl(self, shift: usize) -> Self::Output {
+        let mut result = self;
+        for _ in 0..shift {
+            result = result + result;
+        }
+        result
+    }
+}
+
+impl<Q: PrimeModulus> ShlAssign<usize> for MontgomeryZq<Q> {
+    fn shl_assign(&mut self, shift: usize) {
+        for _ in 0..shift {
+            *self = *self + *self;
+        }
+    }
+}
+
+impl<Q: PrimeModulus> From<u64> for MontgomeryZq<Q> {
+    fn from(value: u64) -> Self {
+        MontgomeryZq::from(Zq::<Q>::from(value))
+    }
+}
+
+impl<Q: PrimeModulus> From<bool> for MontgomeryZq<Q> {
+    fn from(value: bool) -> Self {
+        MontgomeryZq::from(Zq::<Q>::from(value))
+    }
+}
+
+impl<Q: PrimeModulus> Sum for MontgomeryZq<Q> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::zero(), Add::add)
+    }
+}
+
+impl<Q: PrimeModulus> Product for MontgomeryZq<Q> {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::one(), Mul::mul)
+    }
+}
+
+impl<Q: PrimeModulus> Copy for MontgomeryZq<Q> {}
+impl<Q: PrimeModulus> Clone for MontgomeryZq<Q> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Q: PrimeModulus> PartialEq for MontgomeryZq<Q> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<Q: PrimeModulus> Eq for MontgomeryZq<Q> {}
+
+impl<Q: PrimeModulus> PartialOrd for MontgomeryZq<Q> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Q: PrimeModulus> Ord for MontgomeryZq<Q> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl<Q: PrimeModulus> std::hash::Hash for MontgomeryZq<Q> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
+impl<Q: PrimeModulus> Default for MontgomeryZq<Q> {
+    fn default() -> Self {
+        MontgomeryZq::from_montgomery_unchecked(U256::default())
+    }
+}
+
+impl<Q: PrimeModulus> fmt::Debug for MontgomeryZq<Q> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let normal: Zq<Q> = Zq::from(*self);
+        write!(f, "{} (mod {})", normal.as_int(), Q::VALUE)
+    }
+}
+
+impl<Q: PrimeModulus> fmt::Display for MontgomeryZq<Q> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.value)
     }
 }

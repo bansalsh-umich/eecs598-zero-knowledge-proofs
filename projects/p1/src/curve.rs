@@ -1,15 +1,16 @@
 use std::{
-    iter::{Sum},
+    iter::Sum,
     ops::{Add, AddAssign, Mul, Neg, Sub},
     str::FromStr,
 };
 
 use crate::{
     moduli::{P256, P256CurveOrder},
-    zq::Zq,
+    zq::{MontgomeryZq, Zq},
 };
 
-use num_traits::{Inv, Zero};
+use num_traits::{Inv, One, Zero};
+use rand::rand_core::le;
 
 ///The prime defining the underlying field of the curve.
 /// Note that this prime is equal to three mod four,
@@ -22,6 +23,12 @@ pub const SECP256R1_A256: Zq<P256> = Zq::from_str_unchecked(
     "ffffffff00000001000000000000000000000000fffffffffffffffffffffffc",
     16,
 );
+
+pub fn secp256r1_a256_montgomery() -> &'static MontgomeryZq<P256> {
+    static SECP256R1_A256_MONTGOMERY: std::sync::LazyLock<MontgomeryZq<P256>> =
+        std::sync::LazyLock::new(|| MontgomeryZq::from(SECP256R1_A256));
+    &SECP256R1_A256_MONTGOMERY
+}
 
 pub const SECP256R1_B256: Zq<P256> = Zq::from_str_unchecked(
     "5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B",
@@ -44,6 +51,17 @@ pub const SECP256R1_G_Y: Zq<P256> = Zq::from_str_unchecked(
 );
 
 pub const SECP256R1_G: P256Point = P256Point::point_unchecked(SECP256R1_G_X, SECP256R1_G_Y);
+
+/// Extracts w bits from a scalar starting at bit `start`, returned as a u64.
+fn extract_window(scalar: &Zq<P256CurveOrder>, start: usize, w: usize) -> u64 {
+    let mut digit = 0u64;
+    for k in 0..w {
+        if start + k < 256 && scalar.bit(start + k) {
+            digit |= 1 << k;
+        }
+    }
+    digit
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct PrivateZST;
@@ -235,35 +253,62 @@ impl P256Point {
     /// Panics if `scalars.len() != bases.len()`.
     #[inline]
     pub fn msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
-        // TODO: Use Pippenger's algorithm with signed-digit representation for better efficiency.
+        // TODO: half memory usage with signed-digit representation?
         assert_eq!(scalars.len(), bases.len());
-        let mut running_pt = P256Point::Inf; 
-        for i in 0..scalars.len() {
-            running_pt += bases[i] * scalars[i]; 
+        let n = scalars.len();
+
+        if n < 4 {
+            return P256Point::naive_msm(scalars, bases);
         }
-        running_pt 
+
+        let window_width: usize = {
+            let log2_ceil = usize::BITS as usize - (n - 1).leading_zeros() as usize;
+            log2_ceil.clamp(2, 16)
+        };
+
+        let num_buckets = (1usize << window_width) - 1; // unsigned digits 1..=2^w-1
+        let num_windows = 256usize.div_ceil(window_width);
+
+        let jac_bases: Vec<P256Jacobian> =
+            bases.iter().map(|p| P256Jacobian::from(*p)).collect();
+
+        let mut buckets = vec![P256Jacobian::identity(); num_buckets + 1];
+        let mut result = P256Jacobian::identity();
+
+        for j in (0..num_windows).rev() {
+            for _ in 0..window_width {
+                result = result.double();
+            }
+
+            buckets.fill(P256Jacobian::identity());
+            for i in 0..n {
+                let digit = extract_window(&scalars[i], j * window_width, window_width);
+                if digit == 0 {
+                    continue;
+                }
+                buckets[digit as usize] += &jac_bases[i];
+            }
+
+            let mut running = P256Jacobian::identity();
+            let mut window_sum = P256Jacobian::identity();
+            for b in (1..=num_buckets).rev() {
+                running += &buckets[b];
+                window_sum += &running;
+            }
+
+            result += &window_sum;
+        }
+
+        P256Point::from(result)
     }
 
-    /// Doubles the point: `2P`.
-    fn double(&self) -> Self {
-        match self {
-            Self::Inf => Self::Inf,
-            Self::Point { x, y, .. } => {
-                // TODO: Use montgomery multiplication to make these calculations
-                // more efficient.
-                // slope = 3x^2 + a256 / 2y = (3x^2 + a256) * (2y)^-1
-                let numerator = Zq::<P256>::from(3) * x.square() + SECP256R1_A256;
-                let denominator = Zq::<P256>::from(2) * (*y);
-                let slope = numerator * denominator.inv();
-
-                // x' = slope^2 - 2x
-                let x_r = slope.square() - Zq::<P256>::from(2) * (*x);
-
-                // y' = slope * (x - x') - y
-                let y_r = slope * (*x - x_r) - (*y);
-                P256Point::point_unchecked(x_r, y_r)
-            }
+    fn naive_msm(scalars: &[Zq<P256CurveOrder>], bases: &[P256Point]) -> P256Point {
+        debug_assert_eq!(scalars.len(), bases.len());
+        let mut acc = P256Point::zero();
+        for i in 0..scalars.len() {
+            acc += bases[i] * scalars[i];
         }
+        acc
     }
 }
 
@@ -285,24 +330,16 @@ impl Add for P256Point {
     ///
     /// The formulas for the chord and tangent cases differ—make sure to
     /// distinguish when `P = Q` vs `P ≠ Q`.
+    /// Delegates to Jacobian addition to avoid a modular inversion.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         match (&self, &rhs) {
-            (Self::Inf, _) => return rhs,
-            (_, Self::Inf) => return self,
-            (Self::Point { x: x1, y: y1, .. }, Self::Point { x: x2, y: y2, .. }) => {
-                if x1 == x2 {
-                    if y1 == y2 {
-                        return self.double() 
-                    } else {
-                        debug_assert!(y1 == &(-*y2));
-                        return P256Point::Inf;
-                    }
-                }
-                let slope = (*y1 - *y2)/(*x1 - *x2); 
-                let x3 = (slope.square()) - *x1 - *x2; 
-                let y3 = slope * (*x1 - x3) - *y1; 
-                return P256Point::point_unchecked(x3, y3);
+            (Self::Inf, _) => rhs,
+            (_, Self::Inf) => self,
+            _ => {
+                let j1 = P256Jacobian::from(self);
+                let j2 = P256Jacobian::from(rhs);
+                P256Point::from(j1 + j2)
             }
         }
     }
@@ -372,19 +409,13 @@ impl Mul<Zq<P256CurveOrder>> for P256Point {
     ///
     /// This reduces the number of operations to at most `2k` where `k` is the
     /// bit-length of `s`.
+    /// Uses Jacobian coordinates with mixed addition throughout, converting
+    /// back to affine only at the end. This avoids ~256 modular inversions
+    /// compared to the affine double-and-add approach.
     #[inline]
     fn mul(self, rhs: Zq<P256CurveOrder>) -> Self::Output {
-        if self.is_zero() || rhs.is_zero() {
-            return P256Point::Inf;
-        }
-        let mut result = P256Point::Inf;
-        for i in (0..rhs.bit_length()).rev() {
-            result = result.double();
-            if rhs.bit(i) {
-                result = result + self;
-            }
-        }
-        result
+        let base = P256Jacobian::from(self);
+        P256Point::from(base.scalar_mul(rhs))
     }
 }
 
@@ -484,10 +515,341 @@ impl FromStr for P256Point {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct P256Jacobian {
-    x: Zq<P256>,
-    y: Zq<P256>,
-    z: Zq<P256>,
+    x: MontgomeryZq<P256>,
+    y: MontgomeryZq<P256>,
+    z: MontgomeryZq<P256>,
 }
 
-// impl From<
+impl P256Jacobian {
+    fn identity() -> Self {
+        P256Jacobian {
+            x: MontgomeryZq::one(),
+            y: MontgomeryZq::one(),
+            z: MontgomeryZq::zero(),
+        }
+    }
+
+    /// Scalar multiplication via double-and-add in Jacobian coordinates.
+    /// Works for any Z (not just Z=1).
+    fn scalar_mul(&self, scalar: Zq<P256CurveOrder>) -> Self {
+        let mut result = P256Jacobian::identity();
+        for i in (0..scalar.bit_length()).rev() {
+            result = result.double();
+            if scalar.bit(i) {
+                result = result.add_impl(self);
+            }
+        }
+        result
+    }
+}
+
+impl From<P256Point> for P256Jacobian {
+    fn from(point: P256Point) -> Self {
+        match point {
+            P256Point::Inf => P256Jacobian::identity(),
+            P256Point::Point { x, y, .. } => P256Jacobian {
+                x: MontgomeryZq::from(x),
+                y: MontgomeryZq::from(y),
+                z: MontgomeryZq::one(),
+            },
+        }
+    }
+}
+
+impl From<P256Jacobian> for P256Point {
+    fn from(jacobian: P256Jacobian) -> Self {
+        if jacobian.z.is_zero() {
+            return P256Point::Inf;
+        }
+
+        let z_inv = jacobian.z.inv();
+        let z_inv_sq = z_inv.square();
+        let z_inv_cb = z_inv_sq * z_inv;
+
+        let x_affine = jacobian.x * z_inv_sq;
+        let y_affine = jacobian.y * z_inv_cb;
+
+        P256Point::point_unchecked(x_affine.into(), y_affine.into())
+    }
+}
+
+impl P256Jacobian {
+    // For point doubling, we can assume that A = -3 (which it does in this
+    // case), so that lets us turn a multiplication into some additions and
+    // a subtraction.
+    fn double(&self) -> Self {
+        if self.z.is_zero() {
+            return *self;
+        }
+
+        let x = self.x;
+        let y = self.y;
+        let z = self.z;
+
+        // Because we store the denominator in the z coordinate, we can avoid
+        // any divisions here.
+
+        // Slope Numerator: M = 3 X^2 + a Z^4
+        // Numerator of Slope: M = 3 X^2 + a Z^4, but we can make this even
+        // faster by substituting a = -3. Then: M = 3 (X^2 - Z^4) =
+        // 3 (X - Z^2)(X + Z^2). However, we can do even better by replacing
+        // multiplications by 3 with two additions.
+        let zz = z.square();
+        let x_minus_zz = x - zz;
+        let x_plus_zz = x + zz;
+        let partial_m = x_minus_zz * x_plus_zz;
+        let m = partial_m + partial_m + partial_m; // multiply by 3
+
+        // S = 4 X Y^2
+        let yy = y.square();
+        let s = (x * yy) << 2;
+
+        // Final Calculations:
+        // X' = M^2 - 2 S
+        // Y' = M (S - X') - 8 Y^4
+        // Z' = 2 Y Z
+        let x_prime = m.square() - (s << 1);
+        let y_prime = m * (s - x_prime) - (yy.square() << 3);
+        let z_prime = (y * z) << 1;
+
+        P256Jacobian {
+            x: x_prime,
+            y: y_prime,
+            z: z_prime,
+        }
+    }
+}
+
+impl P256Jacobian {
+    /// Core addition logic operating on references to avoid copying
+    /// two full 96-byte Jacobian points up front. Individual 32-byte
+    /// MontgomeryZq fields are copied on access (unavoidable since
+    /// MontgomeryZq arithmetic is by-value), but we never memcpy
+    /// the entire struct.
+    ///
+    /// Computes P3 = P1 + P2, where P1 = (X1, Y1, Z1) and P2 = (X2, Y2, Z2).
+    ///
+    /// Derivation:
+    /// The goal is to compute the affine coordiantes (x3, y3):
+    ///   x3 = lambda^2 - x1 - x2
+    ///   y3 = lambda * (x1 - x3) - y1
+    ///
+    /// In Jacobian coordinates, we have:
+    ///   lambda = (y2 - y1) / (x2 - x1)
+    ///          = (Y2/Z2^3 - Y1/Z1^3) / (X2/Z2^2 - X1/Z1^2)
+    ///
+    /// To subtract these fractions (with unrelated Z denominators), we find a
+    /// common denominator:
+    ///   U1 = X1 * Z2^2, U2 = X2 * Z1^2     (Effective X numerators)
+    ///   S1 = Y1 * Z2^3, S2 = Y2 * Z1^3     (Effective Y numerators)
+    ///
+    /// Now, the slope is:
+    ///   lambda = (S2 - S1) / ((U2 - U1) * (Z1 * Z2))
+    ///
+    /// We define the delta values:
+    ///   H = U2 - U1
+    ///   r = 2 * (S2 - S1) (the scaling is for an optimization)
+    fn add_impl(&self, rhs: &Self) -> Self {
+        if self.z.is_zero() {
+            return *rhs;
+        }
+        if rhs.z.is_zero() {
+            return *self;
+        }
+
+        // If either operand has Z=1, use the cheaper mixed addition
+        // (~8 muls + 3 sqrs vs ~12 muls + 4 sqrs). This is the common
+        // case in scalar_mul where the base point stays affine.
+        let one = MontgomeryZq::<P256>::one();
+        if rhs.z == one {
+            return self.add_mixed(rhs.x, rhs.y);
+        }
+        if self.z == one {
+            return rhs.add_mixed(self.x, self.y);
+        }
+
+        // Normalize
+
+        let z1_2 = self.z.square();
+        let z2_2 = rhs.z.square();
+
+        let u1 = self.x * z2_2;
+        let u2 = rhs.x * z1_2;
+
+        let s1 = self.y * rhs.z * z2_2;
+        let s2 = rhs.y * self.z * z1_2;
+
+        // Calculate Deltas
+
+        let h = u2 - u1;
+        let r = (s2 - s1) << 1;
+
+        if h.is_zero() {
+            if r.is_zero() {
+                return self.double();
+            } else {
+                return P256Jacobian::identity();
+            }
+        }
+
+        // Intermediate Values:
+        // Z3 = 2 * Z1 * Z2 * H, so that we can simplify the X3 expression
+        //
+        // I = (2H)^2 = 4H^2
+        // J = H * I = 4H^3
+        // V = U1 * I = 4H^2 * U1
+        let i = (h << 1).square();
+        let j = h * i;
+        let v = u1 * i;
+
+        // Compute X3
+        // Affine: x3 = lambda^2 - x1 - x2
+        //
+        // Substituting lambda = r / (2 * H * Z1 * Z2):
+        // Numerator(X3) = r^2 - 4H^2 (U1 + U2)
+        //               = r^2 - 4H^2(U1 + U1 + H)   [since U2 = U1 + H]
+        //               = r^2 - 8H^2*U1 - 4H^3
+        //               = r^2 - 2V - J
+        let x3 = r.square() - (v << 1) - j;
+
+        // Compute Y3
+        // Affine: y3 = lambda * (x1 - x3) - y
+        //
+        // Scaling by coordinate weights:
+        // Numerator(Y3) = r (V - X3) - 2 * S1 * J
+        let y3 = r * (v - x3) - (s1 << 1) * j;
+
+        // Compute Z3
+        // Z3 = 2 * H * Z1 * Z2
+        //
+        // Optimization: 2ab = (a + b)^2 - a^2 - b^2
+        // So: Z3 = ((Z1 + Z2)^2 - Z1^2 - Z2^2) * H
+        let z_sum_sq = (self.z + rhs.z).square();
+        let z3 = (z_sum_sq - z1_2 - z2_2) * h;
+
+        P256Jacobian {
+            x: x3,
+            y: y3,
+            z: z3,
+        }
+    }
+
+    /// Mixed Point Addition: adds a Jacobian point to an Affine point
+    ///
+    /// Computes P3 = P1 + P2, where P1 = (X1, Y1, Z1) in Jacobian coordinates
+    /// and P2 = (x2, y2) in Affine coordinates.
+    ///
+    /// Because P2 is in affine coordinates, its Z coordinate is implicitly 1,
+    /// letting us simplify general addition a lot (to the point where special
+    /// casing is worthwhile).
+    ///
+    /// 1. U1 = X1 * Z2^2  => U1 = X1 * 1^2 = X1
+    /// 2. S1 = Y1 * Z2^3  => S1 = Y1 * 1^3 = Y1
+    /// 3. Z3 = 2*Z1*Z2*H  => Z3 = 2*Z1*H
+    fn add_mixed(&self, other_x: MontgomeryZq<P256>, other_y: MontgomeryZq<P256>) -> Self {
+        if self.z.is_zero() {
+            return P256Jacobian {
+                x: other_x,
+                y: other_y,
+                z: MontgomeryZq::one(),
+            };
+        }
+
+        // Normalization is simple
+        let zz = self.z.square();
+        let u1 = self.x;
+        let u2 = other_x * zz;
+
+        let s1 = self.y;
+        let s2 = other_y * zz * self.z;
+
+        // Calculate Deltas
+        let h = u2 - u1;
+        let r = (s2 - s1) << 1;
+
+        if h.is_zero() {
+            if r.is_zero() {
+                return self.double();
+            } else {
+                return P256Jacobian::identity();
+            }
+        }
+
+        // Compute (simple) helper terms
+        // I = (2H)^2
+        // J = H * I
+        // V = U1 * I
+        let i = (h << 1).square();
+        let j = h * i;
+        let v = u1 * i;
+
+        // Compute X3, Y3
+        let x3 = r.square() - (v << 1) - j;
+        let y3 = r * (v - x3) - (s1 << 1) * j;
+
+        // Z3 = 2 * H * Z1
+        let z3 = (h * self.z) << 1;
+
+        P256Jacobian {
+            x: x3,
+            y: y3,
+            z: z3,
+        }
+    }
+}
+
+impl Add for P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        self.add_impl(&rhs)
+    }
+}
+
+impl Add for &P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn add(self, rhs: &P256Jacobian) -> P256Jacobian {
+        self.add_impl(rhs)
+    }
+}
+
+impl AddAssign<&P256Jacobian> for P256Jacobian {
+    #[inline]
+    fn add_assign(&mut self, rhs: &P256Jacobian) {
+        *self = self.add_impl(rhs);
+    }
+}
+
+impl AddAssign for P256Jacobian {
+    #[inline]
+    fn add_assign(&mut self, rhs: P256Jacobian) {
+        *self = self.add_impl(&rhs);
+    }
+}
+
+impl Neg for P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        P256Jacobian {
+            x: self.x,
+            y: -self.y,
+            z: self.z,
+        }
+    }
+}
+
+impl Neg for &P256Jacobian {
+    type Output = P256Jacobian;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        P256Jacobian {
+            x: self.x,
+            y: -self.y,
+            z: self.z,
+        }
+    }
+}
