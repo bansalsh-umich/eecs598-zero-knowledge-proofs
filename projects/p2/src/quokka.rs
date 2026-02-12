@@ -38,6 +38,7 @@
 use crate::{
     ec::{EllipticCurve, ScalarOf},
     ip::{self, Comms, InteractiveProof},
+    sparsemat::SparseMatrix,
 };
 use anyhow::bail;
 use p1::{Zero, poly::Multilinear};
@@ -133,7 +134,19 @@ pub struct OpenProtocol<E: EllipticCurve>(PhantomData<E>);
 /// - The 16 evaluations are arranged into a 4×4 matrix.
 /// - The commitment is 4 group elements (one per row).
 pub fn commit<E: EllipticCurve>(poly: &Multilinear<E::Scalar>) -> (Commitment<E>, Opening<E>) {
-    todo!()
+    let m = 1 << (poly.num_vars() / 2);
+
+    let generators = E::get_generators(m);
+
+    let mut commitments = vec![];
+    commitments.reserve(m);
+    for i in 0..m {
+        for j in 0..m {
+            commitments[i] =  generators[i] * poly.evals[i * m + j];
+        }
+    }
+
+    (commitments, E::Scalar::zero())
 }
 
 /// Implementation of the Quokka opening protocol as an interactive proof.
