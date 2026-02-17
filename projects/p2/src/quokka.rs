@@ -142,7 +142,7 @@ pub fn commit<E: EllipticCurve>(poly: &Multilinear<E::Scalar>) -> (Commitment<E>
     commitments.reserve(m);
     for i in 0..m {
         for j in 0..m {
-            commitments[i] =  generators[i] * poly.evals[i * m + j];
+            commitments[i] =  generators[j] * poly.evals[i * m + j];
         }
     }
 
@@ -199,6 +199,9 @@ impl<E: EllipticCurve> InteractiveProof for OpenProtocol<E> {
         wit: Witness<E>,
         comms: Comms<Self::ProverMessage, Self::VerifierMessage>,
     ) -> ip::Result<()> {
+        // Get the upper half of the evaluation point (r_top) as a slice
+        let point_dimension = stmt.point.len();
+        let r_top = &stmt.point[..point_dimension >> 1];
         todo!()
     }
 
