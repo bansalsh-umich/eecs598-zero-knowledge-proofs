@@ -138,11 +138,10 @@ pub fn commit<E: EllipticCurve>(poly: &Multilinear<E::Scalar>) -> (Commitment<E>
 
     let generators = E::get_generators(m);
 
-    let mut commitments = vec![];
-    commitments.reserve(m);
+    let mut commitments = vec![E::zero(); m];
     for i in 0..m {
         for j in 0..m {
-            commitments[i] =  generators[j] * poly.evals[i * m + j];
+            commitments[i] = commitments[i] + generators[j] * poly.evals[i * m + j];
         }
     }
 
@@ -199,10 +198,25 @@ impl<E: EllipticCurve> InteractiveProof for OpenProtocol<E> {
         wit: Witness<E>,
         comms: Comms<Self::ProverMessage, Self::VerifierMessage>,
     ) -> ip::Result<()> {
+<<<<<<< HEAD
         // Get the upper half of the evaluation point (r_top) as a slice
         let point_dimension = stmt.point.len();
         let r_top = &stmt.point[..point_dimension >> 1];
         todo!()
+=======
+        let poly = wit.poly;
+        let m = 1 << (poly.num_vars() / 2);
+        let half_way = stmt.point.len() / 2;
+        let b_top = Multilinear::eq_tilde(&stmt.point[half_way..]);
+        let mut c_top = vec![E::Scalar::zero(); m];
+        for i in 0..m {
+            for j in 0..m {
+                c_top[j] += b_top[i] * poly.evals[i * m + j];
+            }
+        }
+        comms.send(c_top)?;
+        Ok(())
+>>>>>>> 33005e3 (Did quokka)
     }
 
     /// The Quokka opening verifier.
@@ -232,6 +246,34 @@ impl<E: EllipticCurve> InteractiveProof for OpenProtocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         _rng: &mut R,
     ) -> ip::Result<()> {
-        todo!()
+        let point_dimension = stmt.point.len();
+        let half_dimension = point_dimension >> 1; // We know that it's a power of 2, so this is safe.
+
+        let (r_bot, r_top) = stmt.point.split_at(half_dimension);
+        
+        // let r_top = &stmt.point[half_dimension..];
+        // let r_bot = &stmt.point[..half_dimension];
+
+        let b = Multilinear::eq_tilde(r_top);
+        let derived_commitment = E::msm(&b.evals, &stmt.comm);
+
+        let c_bar = comms.recv().await?;
+        let generators = E::get_generators(c_bar.len());
+        let received_commitment = E::msm(&c_bar, &generators);
+        if derived_commitment != received_commitment {
+            bail!("Prover's claimed b^T . M does not match the commitment");
+        }
+
+        let a = Multilinear::eq_tilde(r_bot);
+        let mut eval = E::Scalar::zero();
+        for i in 0..c_bar.len() {
+            eval += c_bar[i] * a.evals[i];
+        }
+
+        if eval != stmt.value {
+            bail!("Prover's claimed evaluation does not match the computed value");
+        }
+
+        Ok(())
     }
 }
