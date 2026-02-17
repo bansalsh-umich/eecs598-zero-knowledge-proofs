@@ -245,8 +245,19 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         wit: Self::Witness,
         mut comms: Comms<Self::ProverMessage, Self::VerifierMessage>,
     ) -> ip::Result<()> {
-        let sub_comms = comms.establish_subprotocol::<String, i32>("").await?;
-        let value = comms.recv().await?;
+        // let sub_comms = comms.establish_subprotocol::<String, i32>("").await?;
+        // let value = comms.recv().await?;
+
+        let z = stmt.z(&wit);
+        let z_tilde = Multilinear::eq_tilde(&z.to_dense());
+
+        let w_tilde = Multilinear::eq_tilde(&wit.w.to_dense());
+        let (c_w_tilde, opening) = quokka::commit(&w_tilde);
+        comms.send(ProverMessage::PolyComm(c_w_tilde)).await?;
+
+        let challenge = comms.recv().await?;
+        let challenge_tilde = Multilinear::eq_tilde(&challenge);
+
         todo!()
     }
 
@@ -284,6 +295,8 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<()> {
+        let prover_commit = comms.recv().await?; 
+        let random_challenge; 
         todo!()
     }
 }
