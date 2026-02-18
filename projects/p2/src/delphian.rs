@@ -331,8 +331,31 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<()> {
-        let prover_commit = comms.recv().await?;
-        let random_challenge;
+        let prover_commit = comms.recv().await?; 
+        let n = stmt.A.rows; 
+        let logn = n.trailing_zeros() as usize; 
+        let mut tau = Vec::with_capacity(logn); 
+        for _ in 0..logn {
+            tau.push(E::Scalar::random(rng)); 
+        }
+        comms.send(tau)?; 
+        
+        // Run sumcheck on main R1CS polynomial h (verify prover sumcheck)
+        // TO DO: initialize the comms channel for the sumcheck protocol
+        let sumcheck_statement = 
+        sumcheck::Statement{claimed_sum : E::Scalar::zero(), num_vars : logn, max_degree : 3};
+        let verifier_output = 
+        sumcheck::Protocol::<E::Scalar>::verifier(sumcheck_statement, comms, rng).await?; 
+       
+        // Phase 2
+        for matrix  in [&stmt.A, &stmt.B, &stmt.C] {
+            let claimed_value = comms.recv().await?; 
+            // Define second sumcheck
+
+            // Do quokka opening
+        }
+        // Do final sumcheck 
+
         todo!()
     }
 }
