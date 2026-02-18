@@ -141,6 +141,10 @@ pub fn commit<E: EllipticCurve>(poly: &Multilinear<E::Scalar>) -> (Commitment<E>
     let mut commitments = vec![E::zero(); m];
     for i in 0..m {
         for j in 0..m {
+            commitments[i] = commitments[i] + generators[j] * poly.evals[i * m + j];
+        }
+    }
+    (commitments, E::Scalar::zero())
 
 }
 
