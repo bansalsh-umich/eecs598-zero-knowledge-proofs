@@ -248,15 +248,51 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         // let sub_comms = comms.establish_subprotocol::<String, i32>("").await?;
         // let value = comms.recv().await?;
 
+        // 1. Compute Full Assignment
         let z = stmt.z(&wit);
-        let z_tilde = Multilinear::eq_tilde(&z.to_dense());
+        let z_dense = z.to_dense();
+        let z_num_vars = z.size.trailing_zeros() as usize;
+        let z_tilde = Multilinear::new(z_num_vars, z_dense);
 
-        let w_tilde = Multilinear::eq_tilde(&wit.w.to_dense());
+        // 2. Commit to the Witness MLE
+        let w = wit.w;
+        let w_dense = w.to_dense();
+        let w_num_vars = w.size.trailing_zeros() as usize;
+        let w_tilde = Multilinear::new(w_num_vars, w_dense);
+
+        // 2b. Send the commitment
         let (c_w_tilde, opening) = quokka::commit(&w_tilde);
-        comms.send(ProverMessage::PolyComm(c_w_tilde)).await?;
+        comms.send(ProverMessage::PolyComm(c_w_tilde))?;
 
-        let challenge = comms.recv().await?;
-        let challenge_tilde = Multilinear::eq_tilde(&challenge);
+        // 3. Receive random challenge τ from the verifier
+        let tau = comms.recv().await?;
+
+        // 4. Construc the combined polynomial
+        let tau_eq_tilde = Multilinear::eq_tilde(&tau);
+
+        let Az = stmt.A.mul_sparse(&z);
+        let Bz = stmt.B.mul_sparse(&z);
+        let Cz = stmt.C.mul_sparse(&z);
+
+        let log_m = stmt.A.rows.trailing_zeros() as usize;
+        let Az_tilde = Multilinear::new(log_m, Az.to_dense());
+        let Bz_tilde = Multilinear::new(log_m, Bz.to_dense());
+        let Cz_tilde = Multilinear::new(log_m, Cz.to_dense());
+
+        let h_tilde = CombinedMLE::new(
+            3,
+            |vals| {
+                let eq_val = vals[0];
+                let Az_val = vals[1];
+                let Bz_val = vals[2];
+                let Cz_val = vals[3];
+                eq_val * (Az_val * Bz_val - Cz_val)
+            },
+            vec![tau_eq_tilde, Az_tilde, Bz_tilde, Cz_tilde],
+        );
+
+        // Run Sumcheck
+        let claimed_sum = E::Scalar::zero();
 
         todo!()
     }
@@ -295,8 +331,8 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<()> {
-        let prover_commit = comms.recv().await?; 
-        let random_challenge; 
+        let prover_commit = comms.recv().await?;
+        let random_challenge;
         todo!()
     }
 }
