@@ -194,12 +194,6 @@ impl<E: EllipticCurve> InteractiveProof for OpenProtocol<E> {
         wit: Witness<E>,
         comms: Comms<Self::ProverMessage, Self::VerifierMessage>,
     ) -> ip::Result<()> {
-<<<<<<< HEAD
-        // Get the upper half of the evaluation point (r_top) as a slice
-        let point_dimension = stmt.point.len();
-        let r_top = &stmt.point[..point_dimension >> 1];
-        todo!()
-=======
         let poly = wit.poly;
         let m = 1 << (poly.num_vars() / 2);
         let half_way = stmt.point.len() / 2;
@@ -212,7 +206,6 @@ impl<E: EllipticCurve> InteractiveProof for OpenProtocol<E> {
         }
         comms.send(c_top)?;
         Ok(())
->>>>>>> 33005e3 (Did quokka)
     }
 
     /// The Quokka opening verifier.
