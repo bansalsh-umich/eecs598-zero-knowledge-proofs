@@ -46,7 +46,10 @@ use crate::{
     sumcheck,
 };
 use anyhow::bail;
-use p1::{One, Random, Zero, poly::Multilinear};
+use p1::{
+    One, Random, Zero,
+    poly::{Multilinear, Univariate},
+};
 use std::marker::PhantomData;
 
 /// Messages sent from the prover to the verifier in the Delphian protocol.
@@ -288,11 +291,48 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
                 let Cz_val = vals[3];
                 eq_val * (Az_val * Bz_val - Cz_val)
             },
-            vec![tau_eq_tilde, Az_tilde, Bz_tilde, Cz_tilde],
+            vec![
+                tau_eq_tilde,
+                Az_tilde.clone(),
+                Bz_tilde.clone(),
+                Cz_tilde.clone(),
+            ],
         );
 
-        // Run Sumcheck
-        let claimed_sum = E::Scalar::zero();
+
+        let sumcheck_comms = comms
+            .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar,>("main_sumcheck")
+            .await?;
+
+        let sumcheck_statement = sumcheck::Statement {
+            claimed_sum: E::Scalar::zero(),
+            num_vars: log_m,
+            max_degree: 3,
+        };
+
+        let challenges =
+            sumcheck::Protocol::prover(sumcheck_statement, h_tilde, sumcheck_comms).await?;
+
+        // 6. For each matrix M, computer v_M
+        let mut sums = vec![];
+        for &Mz_tilde in [&Az_tilde, &Bz_tilde, &Cz_tilde].iter() {
+            let v_M = Mz_tilde.evaluate(&challenges);
+
+            comms.send(ProverMessage::Value(v_M))?;
+            sums.push(v_M);
+
+            let sumcheck_channel = comms
+                .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar>("matrix_vector_sumcheck")
+                .await?;
+
+            let sumcheck_statement = sumcheck::Statement {
+                claimed_sum: v_M,
+                num_vars: z_num_vars,
+                max_degree: 2,
+            };
+        }
+
+        // 6b. Run Sumcheck
 
         todo!()
     }
@@ -331,30 +371,45 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<()> {
-        let prover_commit = comms.recv().await?; 
-        let n = stmt.A.rows; 
-        let logn = n.trailing_zeros() as usize; 
-        let mut tau = Vec::with_capacity(logn); 
+        let prover_commit = comms.recv().await?;
+        let n = stmt.A.rows;
+        let logn = n.trailing_zeros() as usize;
+        let mut tau = Vec::with_capacity(logn);
         for _ in 0..logn {
-            tau.push(E::Scalar::random(rng)); 
+            tau.push(E::Scalar::random(rng));
         }
-        comms.send(tau)?; 
-        
+        comms.send(tau)?;
+
+        let sumcheck_comms = comms
+            .establish_subprotocol::<E::Scalar, Univariate<E::Scalar>>("main_sumcheck")
+            .await?;
+
         // Run sumcheck on main R1CS polynomial h (verify prover sumcheck)
         // TO DO: initialize the comms channel for the sumcheck protocol
-        let sumcheck_statement = 
-        sumcheck::Statement{claimed_sum : E::Scalar::zero(), num_vars : logn, max_degree : 3};
-        let verifier_output = 
-        sumcheck::Protocol::<E::Scalar>::verifier(sumcheck_statement, comms, rng).await?; 
-       
-        // Phase 2
-        for matrix  in [&stmt.A, &stmt.B, &stmt.C] {
-            let claimed_value = comms.recv().await?; 
-            // Define second sumcheck
+        let sc1_statement = sumcheck::Statement {
+            claimed_sum: E::Scalar::zero(),
+            num_vars: logn,
+            max_degree: 3,
+        };
+        let (h_prime, r_prime) =
+            sumcheck::Protocol::<E::Scalar>::verifier(sc1_statement, sumcheck_comms, rng)
+                .await?;
 
+        // Phase 2
+        let mut v_vals = vec![];
+        for matrix in [&stmt.A, &stmt.B, &stmt.C] {
+            let claimed_value = match comms.recv().await? {
+                ProverMessage::Value(v) => v,
+                other => bail!("Claimed value != prover value"),
+            };
+            v_vals.push(claimed_value);
+            // Define second sumcheck
+            let num_cols = matrix.cols;
+            let log_cols = num_cols.trailing_zeros() as usize;
+            let sc_statement = sumcheck::Statement {claimed_sum : claimed_value, num_vars : log_cols, max_degree : 2}; 
             // Do quokka opening
         }
-        // Do final sumcheck 
+        // Do final sumcheck
 
         todo!()
     }
