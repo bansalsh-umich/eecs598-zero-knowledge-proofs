@@ -253,19 +253,16 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
 
         // 1. Compute Full Assignment
         let z = stmt.z(&wit);
-        let z_dense = z.to_dense();
         let z_num_vars = z.size.trailing_zeros() as usize;
-        let z_tilde = Multilinear::new(z_num_vars, z_dense);
+        let z_tilde = Multilinear::new(z_num_vars, z.to_dense());
 
         // 2. Commit to the Witness MLE
-        let w = wit.w;
-        let w_dense = w.to_dense();
-        let w_num_vars = w.size.trailing_zeros() as usize;
-        let w_tilde = Multilinear::new(w_num_vars, w_dense);
+        let w_num_vars = wit.w.size.trailing_zeros() as usize;
+        let w_tilde = Multilinear::new(w_num_vars, wit.w.to_dense());
 
         // 2b. Send the commitment
         let (c_w_tilde, opening) = quokka::commit(&w_tilde);
-        comms.send(ProverMessage::PolyComm(c_w_tilde))?;
+        comms.send(ProverMessage::PolyComm(c_w_tilde.clone()))?;
 
         // 3. Receive random challenge τ from the verifier
         let tau = comms.recv().await?;
@@ -273,24 +270,15 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         // 4. Construc the combined polynomial
         let tau_eq_tilde = Multilinear::eq_tilde(&tau);
 
-        let Az = stmt.A.mul_sparse(&z);
-        let Bz = stmt.B.mul_sparse(&z);
-        let Cz = stmt.C.mul_sparse(&z);
-
         let log_m = stmt.A.rows.trailing_zeros() as usize;
-        let Az_tilde = Multilinear::new(log_m, Az.to_dense());
-        let Bz_tilde = Multilinear::new(log_m, Bz.to_dense());
-        let Cz_tilde = Multilinear::new(log_m, Cz.to_dense());
+        let Az_tilde = Multilinear::new(log_m, stmt.A.mul_sparse(&z).to_dense());
+        let Bz_tilde = Multilinear::new(log_m, stmt.B.mul_sparse(&z).to_dense());
+        let Cz_tilde = Multilinear::new(log_m, stmt.C.mul_sparse(&z).to_dense());
 
-        let h_tilde = CombinedMLE::new(
+        // Compute h(x) = eq_tilde(tau, X) * [(Az_tilde(X) * Bz_tilde(X)) - (Cz_tilde(X))]
+        let h = CombinedMLE::new(
             3,
-            |vals| {
-                let eq_val = vals[0];
-                let Az_val = vals[1];
-                let Bz_val = vals[2];
-                let Cz_val = vals[3];
-                eq_val * (Az_val * Bz_val - Cz_val)
-            },
+            |vals| vals[0] * (vals[1] * vals[2] - vals[3]),
             vec![
                 tau_eq_tilde,
                 Az_tilde.clone(),
@@ -299,30 +287,43 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
             ],
         );
 
-
-        let sumcheck_comms = comms
-            .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar,>("main_sumcheck")
+        let primary_sumcheck_comms = comms
+            .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar>("main_sumcheck")
             .await?;
 
-        let sumcheck_statement = sumcheck::Statement {
+        let primary_sumcheck_statement = sumcheck::Statement {
             claimed_sum: E::Scalar::zero(),
             num_vars: log_m,
             max_degree: 3,
         };
 
         let challenges =
-            sumcheck::Protocol::prover(sumcheck_statement, h_tilde, sumcheck_comms).await?;
+            sumcheck::Protocol::prover(primary_sumcheck_statement, h, primary_sumcheck_comms)
+                .await?;
 
-        // 6. For each matrix M, computer v_M
-        let mut sums = vec![];
-        for &Mz_tilde in [&Az_tilde, &Bz_tilde, &Cz_tilde].iter() {
-            let v_M = Mz_tilde.evaluate(&challenges);
+        let matrices = [&stmt.A, &stmt.B, &stmt.C];
+        let Mz_tildes = [&Az_tilde, &Bz_tilde, &Cz_tilde];
+        let sumcheck_channel_names = vec!["A_sumcheck", "B_sumcheck", "C_sumcheck"];
+        let quokka_channel_names = vec!["A_quokka", "B_quokka", "C_quokka"];
 
+        for i in 0..matrices.len() {
+            let v_M = Mz_tildes[i].evaluate(&challenges);
             comms.send(ProverMessage::Value(v_M))?;
-            sums.push(v_M);
 
-            let sumcheck_channel = comms
-                .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar>("matrix_vector_sumcheck")
+            // p_M = f_M_tilde(r', X) * z_tilde(X)
+            let f_M_tilde = matrices[i].multilinear_extension();
+            let f_M_tilde_at_challenges = f_M_tilde.partial_eval(&challenges);
+            let p_M = CombinedMLE::new(
+                2,
+                |vals| vals[0] * vals[1],
+                vec![f_M_tilde_at_challenges.clone(), z_tilde.clone()],
+            );
+
+            // Run sumcheck on p_M with claimed sum v_M
+            let sumcheck_comms = comms
+                .establish_subprotocol::<Univariate<E::Scalar>, E::Scalar>(
+                    sumcheck_channel_names[i],
+                )
                 .await?;
 
             let sumcheck_statement = sumcheck::Statement {
@@ -330,11 +331,33 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
                 num_vars: z_num_vars,
                 max_degree: 2,
             };
+
+            let challenges_p_M =
+                sumcheck::Protocol::prover(sumcheck_statement, p_M, sumcheck_comms).await?;
+
+            let w_M = w_tilde.evaluate(&challenges_p_M[..&challenges_p_M.len() - 1]);
+            comms.send(ProverMessage::Value(w_M))?;
+
+            // PC.Open
+            let quokka_comms = comms
+                .establish_subprotocol::<quokka::ProverMessage<E>, quokka::VerifierMessage>(
+                    quokka_channel_names[i],
+                )
+                .await?;
+            let quokka_statement = quokka::Statement {
+                comm: c_w_tilde.clone(),
+                point: challenges_p_M[..challenges_p_M.len() - 1].to_vec(),
+                value: w_M,
+            };
+            let quokka_witness = quokka::Witness {
+                poly: w_tilde.clone(),
+                _opening: opening.clone(),
+            };
+
+            quokka::OpenProtocol::<E>::prover(quokka_statement, quokka_witness, quokka_comms).await?;
         }
 
-        // 6b. Run Sumcheck
-
-        todo!()
+        Ok(())
     }
 
     /// The Delphian verifier algorithm.
@@ -392,8 +415,7 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
             max_degree: 3,
         };
         let (h_prime, r_prime) =
-            sumcheck::Protocol::<E::Scalar>::verifier(sc1_statement, sumcheck_comms, rng)
-                .await?;
+            sumcheck::Protocol::<E::Scalar>::verifier(sc1_statement, sumcheck_comms, rng).await?;
 
         // Phase 2
         let mut v_vals = vec![];
@@ -406,7 +428,11 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
             // Define second sumcheck
             let num_cols = matrix.cols;
             let log_cols = num_cols.trailing_zeros() as usize;
-            let sc_statement = sumcheck::Statement {claimed_sum : claimed_value, num_vars : log_cols, max_degree : 2}; 
+            let sc_statement = sumcheck::Statement {
+                claimed_sum: claimed_value,
+                num_vars: log_cols,
+                max_degree: 2,
+            };
             // Do quokka opening
         }
         // Do final sumcheck
