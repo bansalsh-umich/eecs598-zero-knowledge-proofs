@@ -354,7 +354,8 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
                 _opening: opening.clone(),
             };
 
-            quokka::OpenProtocol::<E>::prover(quokka_statement, quokka_witness, quokka_comms).await?;
+            quokka::OpenProtocol::<E>::prover(quokka_statement, quokka_witness, quokka_comms)
+                .await?;
         }
 
         Ok(())
@@ -394,14 +395,19 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         mut comms: Comms<Self::VerifierMessage, Self::ProverMessage>,
         rng: &mut R,
     ) -> ip::Result<()> {
-        let prover_commit = comms.recv().await?;
-        let n = stmt.A.rows;
-        let logn = n.trailing_zeros() as usize;
-        let mut tau = Vec::with_capacity(logn);
-        for _ in 0..logn {
+        let prover_commit = match comms.recv().await? {
+        ProverMessage::PolyComm(comm) => comm,
+        other => bail!("Got non-prover commit {:?}", other),
+        };
+        let m = stmt.A.rows;
+        let logm = m.trailing_zeros() as usize;
+        let n = stmt.A.cols; 
+        let logn = n.trailing_zeros() as usize; 
+        let mut tau = Vec::with_capacity(logm);
+        for _ in 0..logm {
             tau.push(E::Scalar::random(rng));
         }
-        comms.send(tau)?;
+        comms.send(tau.clone())?;
 
         let sumcheck_comms = comms
             .establish_subprotocol::<E::Scalar, Univariate<E::Scalar>>("main_sumcheck")
@@ -411,7 +417,7 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
         // TO DO: initialize the comms channel for the sumcheck protocol
         let sc1_statement = sumcheck::Statement {
             claimed_sum: E::Scalar::zero(),
-            num_vars: logn,
+            num_vars: logm,
             max_degree: 3,
         };
         let (h_prime, r_prime) =
@@ -419,7 +425,11 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
 
         // Phase 2
         let mut v_vals = vec![];
-        for matrix in [&stmt.A, &stmt.B, &stmt.C] {
+        let matrices = [&stmt.A, &stmt.B, &stmt.C];
+        let sumcheck_names = ["A_sumcheck", "B_sumcheck", "C_sumcheck"];
+        let quokka_names   = ["A_quokka",   "B_quokka",   "C_quokka"];
+        for i in 0..matrices.len() {
+            let matrix = matrices[i];
             let claimed_value = match comms.recv().await? {
                 ProverMessage::Value(v) => v,
                 other => bail!("Claimed value != prover value"),
@@ -433,10 +443,53 @@ impl<E: EllipticCurve> InteractiveProof for Protocol<E> {
                 num_vars: log_cols,
                 max_degree: 2,
             };
-            // Do quokka opening
-        }
-        // Do final sumcheck
+            let mv_sc_comms = comms
+                .establish_subprotocol::<E::Scalar, Univariate<E::Scalar>>(sumcheck_names[i])
+                .await?;
+            let (p_eval, r_doubleprime) =
+                sumcheck::Protocol::<E::Scalar>::verifier(sc_statement, mv_sc_comms, rng).await?;
+            let w_eval = match comms.recv().await? {
+            ProverMessage::Value(v) => v,
+                other => bail!("Got non-value {:?}", other),
+            };
+            let r_top = &r_doubleprime[..log_cols-1]; 
+            let t = r_doubleprime[log_cols-1];
 
-        todo!()
+            // Do quokka opening
+            let mut quokka_comms = comms
+            .establish_subprotocol::<(), Vec<E::Scalar>>(quokka_names[i])
+            .await?;
+            let quokka_statement = quokka::Statement {
+                comm  : prover_commit.clone(),
+                point : r_top.to_vec(), 
+                value : w_eval,
+            }; 
+            quokka::OpenProtocol::<E>::verifier(quokka_statement, quokka_comms, rng).await?; 
+            // Do check (pm(r_doubleprime) = M_tilde(r_prime, r_doubleprime) * Z_tilde(r_doubleprime))
+            let x_dense = stmt.x.to_dense();        
+            let x_mle = Multilinear::new(logn - 1, x_dense);
+            let x_eval = x_mle.evaluate(r_top);
+            let one = E::Scalar::one();
+            let z_eval = (one - t) * x_eval + t * w_eval;
+            let mut full_point = r_prime.clone();
+            full_point.extend_from_slice(&r_doubleprime);
+            let M_mle = matrix.multilinear_extension();
+            let M_eval = M_mle.evaluate(&full_point);
+            
+            if p_eval != M_eval * z_eval {
+             bail!("Matrix-vector product check failed");
+            }
+        }
+        // Do final algebra check 
+        let eq_mle = Multilinear::eq_tilde(&tau);
+        let eq_eval = eq_mle.evaluate(&r_prime);
+
+        let rhs = eq_eval * (v_vals[0] * v_vals[1] - v_vals[2]);
+
+        if h_prime != rhs {
+            bail!("Final consistency check failed");
+        }
+        // return no error if no bails are thrown 
+        Ok(())
     }
 }
