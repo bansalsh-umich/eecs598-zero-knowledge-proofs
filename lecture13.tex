@@ -1,0 +1,826 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 13: Special HVZK, ZK-Sumcheck, and Fiat-Shamir}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+\DeclareMathOperator{\ord}{ord}
+
+% Additional convenience macros
+\newcommand{\PP}{\mathcal{P}}
+\newcommand{\VV}{\mathcal{V}}
+\newcommand{\LL}{\mathcal{L}}
+\newcommand{\CC}{\mathcal{C}}
+\newcommand{\Sim}{\mathcal{S}}
+\newcommand{\pp}{\mathsf{pp}}
+\newcommand{\verify}{\mathsf{verify}}
+\newcommand{\Setup}{\mathsf{Setup}}
+\newcommand{\msm}{\mathsf{msm}}
+\newcommand{\CfCom}{\mathsf{CfCom}}
+\newcommand{\EqProof}{\mathsf{EqProof}}
+\newcommand{\PCOpen}{\mathsf{PC.Open}}
+\newcommand{\NIZK}{\mathsf{NIZK}}
+\newcommand{\getsr}{\xleftarrow{\$}}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\newtcolorbox{highlight}[1][]{
+  colback=blue!5!white,
+  colframe=blue!60!black,
+  fonttitle=\bfseries,
+  #1
+}
+
+\newtcolorbox{importantbox}[1][]{
+  colback=yellow!10!white,
+  colframe=orange!80!black,
+  fonttitle=\bfseries,
+  #1
+}
+
+\begin{document}
+
+%----------------------------------------------------------------------
+% Title Block
+%----------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026}\\[4pt]
+  {\large \textbf{Lecture 13: Special HVZK, ZK-Sumcheck, and Fiat-Shamir}}\\[4pt]
+  {\large Instructor: Paul Grubbs \quad (\href{mailto:paulgrub@umich.edu}{paulgrub@umich.edu})}\\[2pt]
+  {\normalsize Beyster 4709}
+\end{center}
+
+\hrule
+\vspace{1em}
+
+%----------------------------------------------------------------------
+% Agenda
+%----------------------------------------------------------------------
+\section*{Agenda}
+\begin{itemize}
+  \item Announcements
+  \item Special honest-verifier zero-knowledge (HVZK) of Schnorr proofs
+  \item Case study: making sumcheck zero-knowledge
+  \item Getting to NIZKs via Fiat-Shamir
+  \item Practical considerations
+\end{itemize}
+
+\hrule
+\vspace{1em}
+
+%----------------------------------------------------------------------
+% Section 0: Announcements
+%----------------------------------------------------------------------
+\section{Announcements}
+
+\begin{itemize}
+  \item Project 3 not yet online. Sorry about that.
+  \item P3 status update.
+  \item 598 research track: email me.
+  \item My dad is much better.
+\end{itemize}
+
+%----------------------------------------------------------------------
+% Section 1: Special HVZK for Sigma Protocols
+%----------------------------------------------------------------------
+\section{Special Honest-Verifier Zero-Knowledge for Sigma Protocols}
+
+\subsection{Definition}
+
+Recall that sigma protocols are three-move interactive proofs of the form
+$(R, c, z)$ where $R$ is a commitment (first message), $c$ is a random
+challenge from the verifier, and $z$ is the prover's response.  The
+important specialisation of HVZK for sigma protocols is called
+\emph{special} HVZK.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
+                  title={Definition: Special Honest-Verifier Zero-Knowledge}]
+A sigma protocol $\mathsf{IP} = \langle \PP, \VV \rangle$ (with
+verification function $\verify$) for language $\LL$ is
+\textbf{special honest-verifier zero-knowledge} if there exists a
+probabilistic polynomial-time simulator $\Sim$ that takes parameters
+$\pp$, input $x$, and challenge $c \in \CC$, and satisfies:
+
+\begin{enumerate}
+  \item For $\pp \getsr \Setup$ and all pairs $x, c$, the output of
+        $\Sim(\pp, x, c)$ is a proof $\pi = (R, c, z)$ such that
+        \[
+          \verify(\pp,\, x,\, R,\, c,\, z) = 1.
+        \]
+
+  \item For all $(x, w) \in \mathcal{R}_{\LL}$, the transcript $(R, c, z)$
+        computed as
+        \[
+          c \getsr \CC\,;\quad R,\, z \getsr \Sim(x,\, c)
+        \]
+        is \emph{identically distributed} to a real transcript of the
+        interaction $[\PP(\pp, x, w) \leftrightarrow \VV(\pp, x)]$.
+\end{enumerate}
+\end{tcolorbox}
+
+\begin{remark}
+The key distinction of \emph{special} HVZK over plain HVZK is that
+the simulator receives the challenge $c$ \emph{before} producing the
+commitment $R$.  In a real execution, $R$ is sent first and $c$ is
+chosen afterwards; the simulator is allowed to pick $R$ after seeing
+$c$, which is what makes efficient simulation possible without knowing
+the witness.
+\end{remark}
+
+\begin{remark}[Exercise]
+Formalize the extension of special HVZK to protocols with
+\emph{multiple rounds} (i.e., beyond three moves).
+\end{remark}
+
+%----------------------------------------------------------------------
+\subsection{Special HVZK for the Schnorr Protocol}
+
+We now prove that the Schnorr protocol is special HVZK.
+
+Recall the Schnorr protocol for proving knowledge of a discrete
+logarithm.  The public parameters are a group $\mathbb{G}$ of prime
+order $p$ with generator $G$.  The statement is $X = xG$ (i.e.,
+the prover knows $x$), and the verification equation is
+\[
+  zG = R + cX.
+\]
+
+\begin{theorem}
+The Schnorr protocol is special HVZK.
+\end{theorem}
+
+\begin{proof}
+We construct the simulator $\Sim(\mathbb{G}, G, p, X, c)$ as follows:
+
+\begin{algorithm}[H]
+\caption{$\Sim(\mathbb{G}, G, p, X, c)$}
+\begin{algorithmic}[1]
+  \State $z \getsr \mathbb{Z}_p$
+  \State $R \leftarrow zG - cX$
+  \State \Return $(R,\, z)$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Correctness.}  We verify that the simulated transcript
+$(R, c, z)$ passes the verification equation:
+\[
+  zG \stackrel{?}{=} R + cX.
+\]
+By construction, $R = zG - cX$, so $R + cX = zG$.  Thus verification
+holds with probability 1.
+
+\noindent\textbf{Distribution.}  We must show that the joint distribution
+\[
+  \bigl[c \getsr \CC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
+\]
+is identically distributed to a real transcript
+$[\PP(X, x) \leftrightarrow \VV(X)]$.
+
+In a real transcript:
+\begin{itemize}
+  \item The prover picks $r \getsr \mathbb{Z}_p$ and sends $R = rG$.
+  \item The verifier sends $c \getsr \mathbb{Z}_p$.
+  \item The prover sends $z = r + cx$.
+\end{itemize}
+So $(c, z)$ are both uniformly random in $\mathbb{Z}_p$ (since $r$ is
+uniform and independent of $c$), and $R = zG - cX$ is determined by
+$c$ and $z$.
+
+In the simulated transcript:
+\begin{itemize}
+  \item $z \getsr \mathbb{Z}_p$ is uniform.
+  \item $c \getsr \mathbb{Z}_p$ is uniform and independent of $z$.
+  \item $R = zG - cX$ is determined by $c$ and $z$.
+\end{itemize}
+
+Both distributions produce a uniformly random pair $(c, z) \in
+\mathbb{Z}_p^2$ together with $R = zG - cX$.  They are therefore
+identically distributed, confirming:
+\[
+  \bigl[c \getsr \CC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
+  \;\approx\;
+  \bigl[\PP(X, x) \leftrightarrow \VV(X)\bigr].
+\]
+\end{proof}
+
+%----------------------------------------------------------------------
+% Section 2: Case Study -- Making Sumcheck ZK
+%----------------------------------------------------------------------
+\section{Case Study: Making Sumcheck Zero-Knowledge}
+
+\subsection{Why is Sumcheck \emph{Not} Zero-Knowledge?}
+
+Before constructing a zero-knowledge sumcheck, we recall the plain
+sumcheck protocol and identify what information it leaks.
+
+\medskip
+\noindent The plain sumcheck protocol for the claim
+$\sum_{x_1,\ldots,x_v \in \{0,1\}} g(x_1,\ldots,x_v) = H$
+(where $g$ is a multilinear polynomial over $\mathbb{F}$) proceeds as
+follows.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=2cm,
+  every node/.style={font=\small},
+  arr/.style={-{Stealth}, thick}
+]
+  \node (P) {\textbf{Sumcheck.}\(\mathcal{P}(g, H)\)};
+  \node (V) [right=8cm of P] {\textbf{Sumcheck.}\(\mathcal{V}(g, H)\)};
+
+  % Round 1
+  \node (p1) [below=0.6cm of P, align=left] {%
+    Compute $g_1(X_1)$ as\\
+    $\displaystyle\sum_{x_2,\ldots,x_v \in \{0,1\}} g(X_1, x_2, \ldots, x_v)$
+  };
+  \draw[arr] ($(p1.east)+(0,0.1)$) -- node[above]{$g_1$} ($(V.south west)+(0,-0.9)$);
+
+  \node (v1) [below=1.8cm of V, align=left] {%
+    Check $H = g_1(0) + g_1(1)$\\
+    $r_1 \getsr \mathbb{F}$
+  };
+  \draw[arr] ($(v1.west)$) -- node[above]{$r_1$} ($(p1.east)+(0,-0.5)$);
+
+  % Middle dots
+  \node (mid) [below=2.8cm of P] {\ldots\quad In round $j$:\quad\ldots};
+
+  % Round j
+  \node (pj) [below=3.8cm of P, align=left] {%
+    Compute $g_j(X_j)$ as\\
+    $\displaystyle\sum_{x_{j+1},\ldots,x_v \in \{0,1\}} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$
+  };
+  \draw[arr] ($(pj.east)+(0,0.1)$) -- node[above]{$g_j$} ($(V.south west)+(0,-3.7)$);
+
+  \node (vj) [below=4.5cm of V, align=left] {%
+    Check $g_{j-1}(r_{j-1}) = g_j(0) + g_j(1)$\\
+    $r_j \getsr \mathbb{F}$
+  };
+  \draw[arr] ($(vj.west)$) -- node[above]{$r_j$} ($(pj.east)+(0,-0.5)$);
+
+  % Final round
+  \node (fin) [below=6.2cm of P] {\ldots\quad Final round:\quad\ldots};
+
+  \node (pf) [below=7.0cm of P, align=left] {%
+    $g_v \leftarrow g(r_1,\ldots,r_{v-1},X_v)$
+  };
+  \draw[arr] ($(pf.east)+(0,0.1)$) -- node[above]{$g_v$} ($(V.south west)+(0,-6.8)$);
+
+  \node (vf) [below=7.5cm of V, align=left] {%
+    Check $g_{v-1}(r_{v-1}) = g_v(0) + g_v(1)$\\
+    $r_v \getsr \mathbb{F}$\\
+    Check $g_v(r_v) = g(r_1,\ldots,r_v)$\\
+    If all checks pass: Return true\\
+    Else return false
+  };
+\end{tikzpicture}
+\caption{Plain sumcheck protocol. The prover sends univariate
+polynomials $g_1, g_2, \ldots, g_v$ to the verifier.}
+\end{figure}
+
+\medskip
+The problem is that the polynomials $g_1, g_2, \ldots, g_v$ sent in
+each round are evaluations of $g$ with variables partially fixed to
+the random challenges $r_1, \ldots, r_{j-1}$.  These reveal
+information about the secret polynomial $g$.  The protocol is
+therefore \emph{not} zero-knowledge.
+
+\subsection{High-Level Idea of ZK-Sumcheck}
+
+The approach to making sumcheck zero-knowledge is \emph{commit-and-prove}:
+
+\begin{enumerate}
+  \item \textbf{Hiding commit to the ``leaky'' proof.}
+    Instead of sending each round polynomial $g_j$ in the clear, the
+    prover sends a \emph{hiding commitment} to $g_j$ (using a
+    commitment scheme $\CfCom$, i.e., coefficient-wise commitments to the
+    polynomial's coefficients).
+
+  \item \textbf{Prover does verifier's checks ``under commitments.''}
+    For each consistency check that the verifier would normally perform
+    by evaluating $g_j$, the prover instead provides a zero-knowledge
+    proof that the commitment to $g_j$ satisfies the required relation.
+    These sub-proofs are called \emph{equality proofs} (EqProof) and
+    \emph{polynomial commitment opening proofs} (PC.Open).
+\end{enumerate}
+
+\begin{highlight}[title={Key Idea}]
+The ZK-sumcheck replaces each plaintext polynomial $g_j$ with a
+hiding commitment $C_{g_j} \leftarrow \CfCom(g_j)$.  The verifier
+then checks correctness not by inspecting $g_j$ directly, but by
+verifying zero-knowledge equality proofs about the commitments.
+\end{highlight}
+
+\subsection{Commitment Scheme: \texorpdfstring{$\CfCom$}{CfCom}}
+
+The commitment scheme used is a \emph{coefficient-wise commitment} to
+a univariate polynomial.  For a polynomial
+\[
+  p(X) = a_0 + a_1 X + a_2 X^2 + \cdots
+\]
+the commitment is
+\[
+  \CfCom(p) = \bigl(\mathsf{PedCom}(a_0),\, \mathsf{PedCom}(a_1),\, \ldots\bigr),
+\]
+where $\mathsf{PedCom}(a_i) = a_i G + r_i H$ is a Pedersen commitment
+to each coefficient using independent randomness $r_i$.
+
+\medskip
+\noindent\textbf{Evaluating under commitments.}  A crucial property of
+this scheme is that the commitment to a polynomial evaluated at a
+point $r$ can be computed from the coefficient commitments via a
+multi-scalar multiplication (MSM).  Specifically, if
+$C_{g_j} = (C_{a_0}, C_{a_1}, C_{a_2}, \ldots)$ are the coefficient
+commitments for $g_j$, then
+\[
+  C_{g_j(r_j)} \leftarrow \msm\!\bigl(C_{g_j},\, (1,\, r_j,\, r_j^2,\, \ldots)\bigr).
+\]
+Similarly, for checking $g_j(0) + g_j(1)$:
+\[
+  C_{[g_j(0)+g_j(1)]} \leftarrow \msm\!\bigl(C_{g_j},\, (2,\, 1,\, \cdots,\, 1)\bigr).
+\]
+
+\noindent\textbf{Illustration.}  For a degree-2 polynomial
+$p(X) = a_0 + a_1 X + a_2 X^2$ with commitments
+$C_{a_0}, C_{a_1}, C_{a_2}$ (each a Pedersen commitment
+$a_i G + r_i H$):
+\begin{align*}
+  p(0) + p(1) &= a_0 + (a_0 + a_1 + a_2) = 2a_0 + a_1 + a_2,\\
+  C_{[p(0)+p(1)]} &= 2(a_0 G + r_0 H) + 1(a_1 G + r_1 H) + 1(a_2 G + r_2 H)\\
+                  &= (2a_0 + a_1 + a_2)G + (2r_0 + r_1 + r_2)H.
+\end{align*}
+
+\subsection{ZK-Sumcheck Protocol: Round 1}
+
+\noindent The setup involves:
+\begin{itemize}
+  \item Public parameters $\pp$ for the commitment scheme.
+  \item A commitment $C_g$ to the polynomial $g$ (e.g.\ a
+        multilinear extension commitment).
+  \item A commitment $C_v$ to the claimed sum $v = H$.
+\end{itemize}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=1.5cm,
+  every node/.style={font=\small},
+  arr/.style={-{Stealth}, thick}
+]
+  \node (PL) [align=left] {%
+    \textbf{ZKSumcheck.}\(\PP(\pp, C_g, C_v,\; g,\, V,\, d_{g_1}, \Gamma_v)\)
+  };
+  \node (VL) [right=6.5cm of PL, align=left] {%
+    \textbf{ZKSumcheck.}\(\VV(\pp, C_g, C_v)\)
+  };
+
+  \draw[thick] ($(PL.south west)$) -- ($(PL.south east)+(3,0)$);
+  \draw[thick] ($(VL.south west)+(-0.5,0)$) -- ($(VL.south east)+(1,0)$);
+
+  % Prover action
+  \node (pa) [below=0.7cm of PL, align=left] {%
+    Compute $g_1(X_1)$ as\\[2pt]
+    $\displaystyle\sum_{x_2,\ldots,x_v\in\{0,1\}} g(X_1,x_2,\ldots,x_v)$\\[4pt]
+    $C_{g_1} \getsr \CfCom(g_1)$
+  };
+
+  % C_{g1} arrow right
+  \draw[arr] ($(pa.east)+(0,0)$) -- node[above]{$C_{g_1}$} ($(VL.south west)+(0.5,-1.6)$);
+
+  % Verifier action: compute C_{g1(0)+g1(1)}
+  \node (va1) [below=2.0cm of VL, align=left] {%
+    $C \leftarrow \msm(C_{g_1},\,(2,1,\cdots,1))$
+  };
+
+  % EqProof arrow left
+  \draw[arr] ($(va1.west)+(-0.0,-0.4)$) -- node[above]{$\EqProof(C_{g_1},\, C_v)$} ($(pa.east)+(0,-1.2)$);
+
+  % Verifier: sample r1, compute C_{g1(r1)}
+  \node (va2) [below=3.0cm of VL, align=left] {%
+    $r_1 \getsr \mathbb{F}$\\[2pt]
+    $C_{g_1(r_1)} \leftarrow \msm(C_{g_1},\,(1,r_1,r_1^2,\ldots))$
+  };
+
+  % r_1 arrow left
+  \draw[arr] ($(va2.west)$) -- node[above]{$r_1$} ($(pa.east)+(0,-2.3)$);
+\end{tikzpicture}
+\caption{ZK-Sumcheck Round 1.  The prover commits to $g_1$ and
+provides an equality proof that $g_1(0)+g_1(1)$ is consistent with
+the committed claimed value $C_v$.}
+\end{figure}
+
+\medskip
+\noindent\textbf{Notes on Round 1:}
+\begin{itemize}
+  \item The prover sends $C_{g_1} = \CfCom(g_1)$, a hiding commitment
+        to the round-1 polynomial.
+  \item The verifier computes a commitment to $g_1(0)+g_1(1)$ via MSM:
+        $C_{[g_1(0)+g_1(1)]} \leftarrow \msm(C_{g_1}, (2,1,\cdots,1))$.
+  \item The prover runs an $\EqProof$ (a Schnorr-style equality proof)
+        to prove that this MSM commitment equals $C_v$ (the commitment
+        to the claimed sum $H$).  This ensures $g_1(0)+g_1(1) = H$
+        without revealing $g_1$.
+  \item The verifier samples $r_1 \getsr \mathbb{F}$ and computes
+        $C_{g_1(r_1)} \leftarrow \msm(C_{g_1}, (1, r_1, r_1^2, \ldots))$.
+        This will be used as the ``target'' for the next round.
+\end{itemize}
+
+\subsection{ZK-Sumcheck Protocol: Round \texorpdfstring{$j$}{j} (General)}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  every node/.style={font=\small},
+  arr/.style={-{Stealth}, thick}
+]
+  \node (lbl) {\ldots\quad In round $j$:\quad\ldots};
+
+  % Prover action
+  \node (pa) [below=0.5cm of lbl, align=left] {%
+    Compute $g_j(X_j)$ as\\[2pt]
+    $\displaystyle\sum_{x_{j+1},\ldots,x_v\in\{0,1\}} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$\\[4pt]
+    $C_{g_j} \leftarrow \CfCom(g_j)$
+  };
+  \node (VL) [right=6.5cm of pa] {};
+
+  % C_{gj} arrow right
+  \draw[arr] ($(pa.east)+(0,0.3)$) -- node[above]{$C_{g_j}$} ($(VL)+(0,0.3)$);
+
+  % Verifier: compute C_{gj(0)+gj(1)}
+  \node (va1) [below=1.6cm of VL, align=right] {%
+    $C_{[g_j(0)+g_j(1)]} \leftarrow \msm(C_{g_j},\,(2,1,\cdots,1))$
+  };
+
+  % EqProof arrow left (both directions indicated)
+  \draw[arr] ($(va1.west)+(-0.0,-0.3)$) -- node[above]{$\EqProof\bigl(C_{[g_j(0)+g_j(1)]},\, C_{g_{j-1}(r_{j-1})}\bigr)$} ($(pa.east)+(0,-1.2)$);
+
+  % Verifier: sample rj, compute C_{gj(rj)}
+  \node (va2) [below=3.0cm of VL, align=right] {%
+    $r_j \getsr \mathbb{F}$\\[2pt]
+    $C_{g_j(r_j)} \leftarrow \msm(C_{g_j},\,(1,r_j,r_j^2,\ldots))$
+  };
+
+  % rj arrow left
+  \draw[arr] ($(va2.west)+(-0.5,0.3)$) -- node[above]{$r_j$} ($(pa.east)+(0,-2.3)$);
+\end{tikzpicture}
+\caption{ZK-Sumcheck in round $j$ (general).}
+\end{figure}
+
+\medskip
+\noindent\textbf{Notes on Round $j$:}
+\begin{itemize}
+  \item The prover commits to $g_j$, the univariate polynomial obtained
+        by fixing the first $j-1$ variables to $r_1,\ldots,r_{j-1}$ and
+        summing over the remaining boolean inputs.
+  \item The verifier computes $C_{[g_j(0)+g_j(1)]}$ via MSM.
+  \item The prover provides an $\EqProof$ showing that
+        $g_j(0)+g_j(1)$ equals $g_{j-1}(r_{j-1})$ under the
+        commitments: i.e.,
+        \[
+          C_{[g_j(0)+g_j(1)]} \stackrel{?}{=} C_{g_{j-1}(r_{j-1})}.
+        \]
+        This replaces the plain consistency check $g_{j-1}(r_{j-1}) = g_j(0)+g_j(1)$.
+  \item The verifier samples $r_j \getsr \mathbb{F}$ and computes
+        $C_{g_j(r_j)}$ for use in the next round.
+\end{itemize}
+
+\subsection{ZK-Sumcheck Protocol: Final Round}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  every node/.style={font=\small},
+  arr/.style={-{Stealth}, thick}
+]
+  \node (lbl) {\ldots\quad Final round:\quad\ldots};
+
+  \node (pa) [below=0.5cm of lbl, align=left] {%
+    $g_v \leftarrow g(r_1,\ldots,r_{v-1},X_v)$\\[2pt]
+    $C_{g_v} \leftarrow \CfCom(g_v)$
+  };
+  \node (VL) [right=6.5cm of pa] {};
+
+  % C_{gv} arrow right
+  \draw[arr] ($(pa.east)+(0,0.3)$) -- node[above]{$C_{g_v}$} ($(VL)+(0,0.3)$);
+
+  % Verifier: C_{gv(0)+gv(1)}
+  \node (va1) [below=1.4cm of VL, align=right] {%
+    $C_{[g_v(0)+g_v(1)]} \leftarrow \msm(C_{g_v},\,(2,1,\cdots,1))$
+  };
+
+  % EqProof arrow left
+  \draw[arr] ($(va1.west)+(-0.0,-0.3)$) -- node[above]{$\EqProof\bigl(C_{[g_v(0)+g_v(1)]},\, C_{g_{v-1}(r_{v-1})}\bigr)$} ($(pa.east)+(0,-1.0)$);
+
+  % Verifier: sample rv, compute C_{gv(rv)}
+  \node (va2) [below=2.8cm of VL, align=right] {%
+    $r_v \getsr \mathbb{F}$\\[2pt]
+    $C_{g_v(r_v)} \leftarrow \msm(C_{g_v},\,(1,r_v,r_v^2,\ldots))$
+  };
+
+  % PC.Open arrow left
+  \draw[arr] ($(pa.east)+(0,-2.3)$) -- node[above]{$\PCOpen\bigl(C_g,\,(r_1,\ldots,r_v),\,C_{g_v(r_v)}\bigr)$} ($(va2.west)+(-0.5,0.3)$);
+
+  \node (vfin) [below=4.2cm of VL, align=right] {%
+    If all checks pass: Return true\\
+    Else return false
+  };
+\end{tikzpicture}
+\caption{ZK-Sumcheck final round.}
+\end{figure}
+
+\medskip
+\noindent\textbf{Notes on the Final Round:}
+\begin{itemize}
+  \item In the last round, the prover sets
+        $g_v \leftarrow g(r_1,\ldots,r_{v-1}, X_v)$ and commits
+        to it.
+  \item The consistency check (that $g_v(0)+g_v(1) = g_{v-1}(r_{v-1})$)
+        is again handled with an $\EqProof$ under commitments.
+  \item In place of the plain oracle query $g_v(r_v) = g(r_1,\ldots,r_v)$,
+        the prover provides a \textbf{polynomial commitment opening proof}:
+        \[
+          \PCOpen\bigl(C_g,\,(r_1,\ldots,r_v),\,C_{g_v(r_v)}\bigr).
+        \]
+        This proves that the committed polynomial $g$ (committed in $C_g$)
+        evaluates to the same value as $g_v(r_v)$ at the random point
+        $(r_1,\ldots,r_v)$, without revealing $g$ or its evaluation.
+  \item The simulator for this protocol is
+        $\Sim(C_g, C_v, (r_1, \ldots, r_n))$ (see ZK property
+        discussion below).
+\end{itemize}
+
+\subsection{ZK Property of the ZK-Sumcheck}
+
+The ZK property follows from the composition of the hiding properties
+of the commitment scheme and the HVZK properties of the sub-proofs
+(EqProof and PC.Open).  Intuitively:
+\begin{itemize}
+  \item The commitments $C_{g_j}$ hide $g_j$ by the hiding property
+        of $\CfCom$.
+  \item The equality proofs are Schnorr-type protocols, which are
+        special HVZK (as shown in Section~2).
+  \item The polynomial commitment opening proof is also HVZK.
+\end{itemize}
+A simulator for the full ZK-sumcheck protocol is
+$\Sim(C_g, C_v, (r_1,\ldots,r_v))$: it simulates each round's
+commitment and equality proof without knowing $g$ or $v$.
+
+%----------------------------------------------------------------------
+% Section 3: Getting to NIZKs via Fiat-Shamir
+%----------------------------------------------------------------------
+\section{Getting to NIZKs via Fiat-Shamir}
+
+\subsection{Background}
+
+Interactive proof systems require the prover and verifier to
+communicate.  For many applications (e.g., blockchain, digital
+signatures) we want \emph{non-interactive} zero-knowledge proofs
+(NIZKs) that can be verified without back-and-forth communication.
+
+The \textbf{Fiat-Shamir (FS) transform} converts an interactive
+protocol into a non-interactive one by replacing the verifier's
+random challenges with outputs of a cryptographic hash function
+(modeled as a \emph{random oracle}).
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
+                  title={Fiat-Shamir Transform}]
+Let $\mathsf{IP} = \langle \Setup, \PP, \VV \rangle$ be an interactive
+argument.  The \textbf{Fiat-Shamir transform} with random oracle
+$\mathbf{F}$ produces a non-interactive argument
+\[
+  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\PP^{\mathbf{F}},\;
+  \mathsf{FS[IP]}.\VV^{\mathbf{F}}\bigr),
+\]
+where:
+\begin{itemize}
+  \item The prover $\mathsf{FS[IP]}.\PP^{\mathbf{F}}$ runs the
+        interactive prover but replaces each verifier challenge with
+        $c_i = \mathbf{F}(\text{transcript so far})$.
+  \item The verifier $\mathsf{FS[IP]}.\VV^{\mathbf{F}}$ recomputes
+        all challenges using $\mathbf{F}$ and checks the proof.
+\end{itemize}
+The resulting proof $\pi$ is a static object (a string) that any
+verifier can check without interaction.
+\end{tcolorbox}
+
+\subsection{``Fiat-Shamir Preserves ZK''}
+
+\begin{theorem}[\textbf{FS Preserves ZK}]
+Let $\mathsf{IP} = \langle \Setup, \PP, \VV \rangle$ be an interactive
+argument for language $\LL$.  Let
+\[
+  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\PP^{\mathbf{F}},\;
+  \mathsf{FS[IP]}.\VV^{\mathbf{F}}\bigr)
+\]
+be the non-interactive argument obtained from applying the Fiat-Shamir
+transform with random oracle $\mathbf{F}$ to $\mathsf{IP}$.  If
+$\mathsf{IP}$ is \emph{special honest-verifier zero-knowledge} and
+has \emph{unpredictable commitments}, then $\mathsf{FS[IP]}$ is a
+\textbf{non-interactive zero-knowledge argument}.
+\end{theorem}
+
+\begin{proof}[Proof (sketch)]
+We need to construct a simulator $\Sim^{\mathbf{F}}$ for
+$\mathsf{FS[IP]}$ that, given only the statement $x$, produces a
+simulated proof $\pi$ that is indistinguishable from a real proof, in
+the random oracle model.
+
+The simulator proceeds as follows (exploiting programmability of the
+random oracle):
+
+\begin{algorithm}[H]
+\caption{NIZK Simulator $\Sim^{\mathbf{F}}(x)$}
+\begin{algorithmic}[1]
+  \State // We simulate the NIZK proof for statement $x$
+  \State // Key idea: we can \emph{program} the random oracle $\mathbf{F}$
+  \State Pick a random challenge $c \getsr \CC$
+  \State Run the HVZK simulator: $(R, z) \getsr \Sim_{\mathsf{IP}}(x, c)$
+  \State Program the random oracle: set $\mathbf{F}(R) := c$
+  \State \Return $\pi = (R, c, z)$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent\textbf{Why this works:}
+\begin{itemize}
+  \item The HVZK simulator $\Sim_{\mathsf{IP}}$ produces a
+        transcript $(R, c, z)$ that is identically distributed to a
+        real transcript (by special HVZK), where $c$ is chosen before
+        $R$ is generated.
+  \item In the non-interactive setting, $c = \mathbf{F}(R)$; since the
+        simulator can program the random oracle, it sets
+        $\mathbf{F}(R) = c$.
+  \item The \emph{unpredictable commitments} property ensures that $R$
+        was not previously queried to $\mathbf{F}$ by the adversary
+        (with overwhelming probability), so there is no conflict in
+        programming $\mathbf{F}(R) = c$.
+  \item The resulting simulated proof $\pi = (R, c, z)$ is
+        indistinguishable from a real proof:
+        \begin{align*}
+          &\text{Real proof: } \PP(x, w) \text{ with } c = \mathbf{F}(R) \\
+          &\text{Simulated proof: } \Sim_{\mathsf{IP}}(x, c),\
+            \mathbf{F}(R) := c.
+        \end{align*}
+\end{itemize}
+
+\medskip
+\noindent\textbf{Key diagram (the ``round-trip'' of Fiat-Shamir ZK).}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=1.2cm,
+  every node/.style={font=\small},
+  arr/.style={-{Stealth}, thick}
+]
+  % Real sigma protocol flow
+  \node (R) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm] {$R$};
+  \node (c) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm, below=0.8cm of R] {$c$};
+  \node (z) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm, below=0.8cm of c] {$z$};
+  \draw[arr] (R) -- (c) node[midway, right] {$c = \mathbf{F}(R)$};
+  \draw[arr] (c) -- (z);
+  \node[left=0.3cm of R] {Prover sends:};
+\end{tikzpicture}
+\end{center}
+
+\noindent The simulator picks $c$ first, generates $(R,z)$ via
+$\Sim_{\mathsf{IP}}$, and programs $\mathbf{F}(R)=c$ to make the
+hash consistent.  This is valid because:
+\begin{itemize}
+  \item The HVZK distribution is the same whether $c$ is chosen before
+        or after $R$ (this is the whole point of special HVZK).
+  \item Unpredictable commitments ensure the random oracle at $R$
+        has not been queried before, so programming is safe.
+\end{itemize}
+\end{proof}
+
+\begin{remark}
+The condition \emph{unpredictable commitments} (sometimes called
+``unique commitments'' or ``high-entropy commitments'') means that
+the prover's first message $R$ is computationally unpredictable ---
+i.e., given only the statement $x$, no PPT adversary can guess $R$
+before the prover generates it.  For Schnorr, $R = rG$ with $r
+\getsr \mathbb{Z}_p$ is unpredictable under the discrete logarithm
+assumption.
+\end{remark}
+
+%----------------------------------------------------------------------
+% Section 4: Practical Considerations
+%----------------------------------------------------------------------
+\section{Practical Considerations for Zero Knowledge}
+
+In practice, when deploying zero-knowledge proof systems there are
+several important considerations.
+
+\begin{highlight}[title={Practical Considerations}]
+\begin{itemize}
+  \item \textbf{Choice of commitment scheme.}
+    The ZK-sumcheck construction requires a \emph{hiding} and
+    \emph{binding} commitment scheme.  Pedersen commitments over
+    elliptic curves are a standard choice: $\mathsf{Com}(v; r) = vG + rH$
+    for independently chosen generators $G, H$.
+
+  \item \textbf{Polynomial commitment schemes.}
+    The final round of ZK-sumcheck requires a polynomial commitment
+    opening proof (PC.Open).  In practice, schemes such as KZG,
+    FRI, or IPA are used, each with different trade-offs in proof size,
+    prover time, and verifier time.
+
+  \item \textbf{Efficiency of EqProof.}
+    Equality proofs between Pedersen commitments are efficient
+    Schnorr-type protocols.  They add only a constant overhead per
+    round of sumcheck.
+
+  \item \textbf{Non-interactive proofs via Fiat-Shamir.}
+    The Fiat-Shamir transform (applied to the ZK-sumcheck and
+    sub-protocols) converts the whole interactive argument into a
+    NIZK suitable for blockchain and other settings.  The random
+    oracle is instantiated with a cryptographic hash function (e.g.,
+    SHA-3 or Poseidon in the arithmetic setting).
+
+  \item \textbf{Proof size and verification cost.}
+    Each round of ZK-sumcheck sends one commitment $C_{g_j}$ plus
+    one EqProof.  For $v$ variables and degree-$d$ polynomials per
+    round, the total proof consists of $O(v \cdot d)$ group elements.
+
+  \item \textbf{The role of the random oracle model.}
+    The security of Fiat-Shamir NIZKs is proven in the random oracle
+    model (ROM).  In practice, the hash function must be modeled
+    carefully; the proof fails in general if the hash function has
+    structure that the adversary can exploit.
+\end{itemize}
+\end{highlight}
+
+%----------------------------------------------------------------------
+% Summary
+%----------------------------------------------------------------------
+\section*{Summary}
+
+\begin{itemize}
+  \item \textbf{Special HVZK} strengthens plain HVZK by requiring a
+        simulator that receives the challenge \emph{before} producing
+        the commitment.  This is the right notion for sigma protocols
+        and is what Fiat-Shamir exploits.
+
+  \item The \textbf{Schnorr protocol} is special HVZK.  The simulator
+        $\Sim(\mathbb{G}, G, p, X, c)$ picks $z \getsr \mathbb{Z}_p$,
+        computes $R = zG - cX$, and returns $(R, z)$.  The distribution
+        of $(R, c, z)$ is identical to a real transcript.
+
+  \item The \textbf{plain sumcheck} is not ZK because the round
+        polynomials $g_j$ reveal information about $g$.  The
+        \textbf{ZK-sumcheck} fixes this via a commit-and-prove
+        approach: the prover commits to each $g_j$ using $\CfCom$
+        and replaces verifier checks with equality proofs and a
+        polynomial commitment opening in the final round.
+
+  \item \textbf{Fiat-Shamir preserves ZK}: if an interactive argument
+        is special HVZK and has unpredictable commitments, then the
+        Fiat-Shamir transform produces a NIZK (in the random oracle
+        model).  The NIZK simulator programs the random oracle to make
+        the simulated commitment consistent with the simulated challenge.
+
+  \item In practice, ZK-sumcheck is combined with Fiat-Shamir to
+        yield efficient NIZKs for multilinear polynomial sum claims,
+        used as building blocks in systems such as Spartan, Lasso,
+        and others.
+\end{itemize}
+
+\end{document}
