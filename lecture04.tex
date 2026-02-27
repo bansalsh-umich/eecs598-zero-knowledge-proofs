@@ -1,0 +1,585 @@
+%
+% EECS 498/CSE 598: Zero-Knowledge Proofs
+% Lecture 4: Elliptic Curves, Polynomials, and the Schwartz-Zippel Lemma
+% Instructor: Paul Grubbs
+% University of Michigan, Winter 2026
+%
+
+\documentclass[11pt]{article}
+
+%----------------------- Packages -----------------------
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+%----------------------- Page style -----------------------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 4: Elliptic Curves, Polynomials, and Schwartz-Zippel}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+%----------------------- Theorem environments -----------------------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+%----------------------- Macros -----------------------
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+\DeclareMathOperator{\ord}{ord}
+
+% Convenience macros for this lecture
+\newcommand{\EFp}{E/\mathbb{F}_p}
+\newcommand{\FFp}{\mathbb{F}_p}
+
+%=============================================================
+\begin{document}
+%=============================================================
+
+%----------------------- Title block -----------------------
+\begin{center}
+  {\Large \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}} \\[4pt]
+  {\large \textbf{Lecture 4: Elliptic Curves, Polynomials, and the Schwartz-Zippel Lemma}} \\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+   \texttt{paulgrub@umich.edu} \quad Beyster 4709} \\[2pt]
+  {\normalsize University of Michigan \quad Winter 2026}
+\end{center}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Agenda -----------------------
+\paragraph{Agenda.}
+\begin{enumerate}[label=(\arabic*)]
+  \item Announcements
+  \item Elliptic curve groups
+  \item Computing with elliptic curves
+  \item Polynomials
+  \item The Schwartz-Zippel lemma
+  \item A randomized protocol for computing string equality
+  \item Efficient algorithms for polynomials
+\end{enumerate}
+
+\medskip
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!40!black, title=Note]
+Pairings background is deferred until a later lecture.
+\end{tcolorbox}
+
+\bigskip
+
+%=============================================================
+\section{Announcements}
+%=============================================================
+
+\begin{itemize}
+  \item Project 1 is online.
+  \item The autograder is working.
+\end{itemize}
+
+%=============================================================
+\section{Elliptic Curve Groups}
+\label{sec:ec-groups}
+%=============================================================
+
+\subsection{Elliptic Curve Basics}
+
+An \emph{elliptic curve} over a finite field $\Fp$ is defined by the
+\textbf{short Weierstrass equation}
+\[
+  y^2 = x^3 + ax + b, \qquad a, b \in \Fp.
+\]
+We define the set of \emph{affine points} on the curve as
+\[
+  E_0 = \bigl\{(x, y) \mid y^2 = x^3 + ax + b\bigr\},
+\]
+and then adjoin a special \emph{point at infinity} $\mathcal{O}$:
+\[
+  E \;:=\; E_0 \;\cup\; \{\mathcal{O}\}.
+\]
+The set $E$ equipped with a suitable addition law forms an abelian group
+with identity element $\mathcal{O}$.
+
+\subsubsection{Size of the Group}
+
+The notation $|E/\Fp|$ denotes the number of points on $E$ over $\Fp$
+(including $\mathcal{O}$).
+
+\begin{theorem}[Hasse's Theorem]
+  \[
+    \bigl|\, |E/\Fp| - p \,\bigr| \;\lesssim\; \sqrt{p}.
+  \]
+  In other words, the number of points on an elliptic curve over $\Fp$
+  is approximately $p$, up to an error of order $\sqrt{p}$.
+\end{theorem}
+
+\begin{fact}[Schoof's Algorithm]
+  The group order $|E/\Fp|$ can be computed \emph{efficiently}
+  (i.e., in polynomial time in $\log p$) using Schoof's algorithm.
+\end{fact}
+
+%=============================================================
+\section{Computing with Elliptic Curves}
+\label{sec:ec-computing}
+%=============================================================
+
+\subsection{Scalar Multiplication}
+
+\emph{Scalar multiplication} is the operation of adding a point to itself
+repeatedly. Formally, for $a \in \Z$ and $P \in E/\Fp$,
+\[
+  aP \;=\; \underbrace{P + P + \cdots + P}_{a}.
+\]
+
+\paragraph{Key properties.}
+\begin{itemize}
+  \item If $a = |E/\Fp|$ (the group order), then $aP = \mathcal{O}$ for all
+        $P \in E/\Fp$ (by Lagrange's theorem applied to the group).
+  \item If $a = b + r$ (for some integers $b$ and $r$), then
+        \[
+          aP \;=\; bP + rP,
+        \]
+        so scalar multiplication distributes over integer addition.
+  \item Concretely, if $a \equiv b \pmod{|E/\Fp|}$, then $aP = bP$.
+\end{itemize}
+
+\paragraph{Computing generators.}
+The elliptic curve groups used in practice are either:
+\begin{itemize}
+  \item \emph{cyclic} (the entire group is generated by a single element), or
+  \item contain generators of \emph{large order} (a large prime-order subgroup).
+\end{itemize}
+
+\subsection{Multi-Scalar Multiplication (MSM)}
+
+\begin{tcolorbox}[colback=gray!8!white, colframe=gray!50!black,
+                  title=Multi-Scalar Multiplication]
+\textbf{Input:} $n$ points $P_1, \ldots, P_n \in E/\Fp$ and $n$ scalars
+$a_1, \ldots, a_n \in \Z$.\\
+\textbf{Output:}
+\[
+  \sum_{i=1}^{n} a_i P_i.
+\]
+\end{tcolorbox}
+
+MSM is the \textbf{computational bottleneck} in many ZKP systems.
+Efficient algorithms for MSM include the \emph{Bucket Method}
+(also known as the Pippenger algorithm).
+
+\paragraph{Additive homomorphism of MSM.}
+MSM is additively homomorphic in the scalars:
+\[
+  \mathrm{MSM}(\vec{a}) + \mathrm{MSM}(\vec{b})
+  \;=\; \mathrm{MSM}(\vec{a} + \vec{b}),
+\]
+where $\vec{a} + \vec{b}$ denotes componentwise addition of the scalar
+vectors. This homomorphism property is heavily exploited in ZKP constructions.
+
+\subsection{Computational Issues in ECC Implementations}
+
+Implementing elliptic curve cryptography securely requires addressing
+several classes of attacks:
+
+\begin{enumerate}
+  \item \textbf{Side-channel attacks.}
+        A naive implementation of scalar multiplication may leak the scalar
+        $a$ through timing or power consumption.
+        The \emph{Montgomery ladder} is a standard countermeasure that
+        performs scalar multiplication in constant time (no secret-dependent
+        branches or memory accesses).
+
+  \item \textbf{Invalid-curve attacks.}
+        An adversary may supply a point $(x,y)$ that does \emph{not} satisfy
+        the curve equation, i.e., $(x,y) \notin E/\Fp$.
+        Operating on such a point can lead to attacks.
+        Implementations must validate that input points lie on the correct curve.
+\end{enumerate}
+
+\paragraph{Performance.}
+A concrete example: the \textbf{P-256} curve (NIST standard) has both
+$p$ and $|E/\Fp|$ approximately $256$ bits. A scalar multiplication on
+P-256 takes roughly $36.5\;\mu\mathrm{s}$ on modern hardware.
+Post-quantum (PQ) cryptographic primitives can be faster in raw computation
+but tend to produce larger keys and ciphertexts.
+
+%=============================================================
+\section{Polynomials}
+\label{sec:polynomials}
+%=============================================================
+
+\subsection{What Is a Polynomial?}
+
+Intuitively, a polynomial is:
+\begin{itemize}
+  \item A sum of variables raised to different powers (a formal algebraic expression).
+  \item Equivalently, a list of \emph{coefficients}.
+  \item May involve \emph{many variables} (multivariate polynomials).
+  \item Can be viewed as an \emph{encoding of data} (the coefficients encode
+        a sequence of field elements).
+\end{itemize}
+
+\subsection{Polynomial Terminology}
+
+\begin{center}
+\begin{tabular}{|l|p{9cm}|}
+\hline
+\textbf{Term} & \textbf{Definition} \\
+\hline
+Degree & (Univariate) maximum power of $x$ with nonzero coefficient. \\
+\hline
+``Total'' degree & Maximum of the sum of exponents in any single term. \\
+\hline
+``Maximal'' degree in a variable & (Univariate) degree in that variable, viewing other vars as fixed. \\
+\hline
+Root & For $p(x)$, a root $r$ is a point so that $p(r) = 0$. \\
+\hline
+$*$-variate (e.g.\ univariate, multivariate) & How many variables. Uni $= 1$, multi $= $ more than $1$. \\
+\hline
+Multilinear & Multivariate polynomial with max degree $1$ in each variable. \\
+\hline
+Monomial/term & Either a single variable with exponent, or a product of variables with exponents. \\
+\hline
+Monic & Leading coefficient is $1$. \\
+\hline
+Evaluation & Compute result of ``plugging in'' a value for variables and reducing using add/mul. \\
+\hline
+Partial evaluation & Substituting values for only \emph{some} variables; gives a polynomial in fewer variables. \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{example}
+  The polynomial
+  \[
+    f(x_1, x_2, x_3) \;:=\; x_1 x_2 x_3 + 4x_1 x_2 + 3x_2 x_3 + 6x_1 + 1
+  \]
+  over $\mathbb{F}_7$ is a multivariate polynomial in three variables.
+  \begin{itemize}
+    \item Its total degree is $3$ (from the term $x_1 x_2 x_3$).
+    \item Its maximal degree in each variable is $1$, so it is \emph{multilinear}.
+  \end{itemize}
+\end{example}
+
+\subsection{Divisibility and the Polynomial Ring $\F[X]$}
+
+Let $a, b \in \F[X]$ be polynomials with $\deg(a) \geq \deg(b)$. Then there
+exist \emph{unique} $q, r \in \F[X]$ such that
+\[
+  a(x) \;=\; q(x)\,b(x) + r(x), \qquad \deg(r) < \deg(b).
+\]
+We say $b \mid a$ (``$b$ divides $a$'') if $r = 0$.
+
+\begin{itemize}
+  \item \textbf{Polynomial long division} computes $q$ and $r$ from $a$ and $b$.
+  \item \textbf{Polynomial GCD:} Given $a, b$, there exists $d \in \F[X]$
+        such that $d \mid a$ and $d \mid b$, and $d = \gcd(a, b)$.
+  \item \textbf{Extended Euclidean Algorithm (EEA):} Given $a, b$, the EEA
+        produces $x, y \in \F[X]$ such that
+        \[
+          a(x)\,x + b(x)\,y \;=\; d \;=\; \gcd(a, b).
+        \]
+\end{itemize}
+
+\subsection{Modular Arithmetic of Polynomials}
+
+Analogous to modular arithmetic of integers, we define:
+\[
+  a(x) \bmod m(x) \;=\; \text{remainder of } a \text{ divided by } m.
+\]
+
+\paragraph{Key property.}
+Let $b(x) = (x - a_1)(x - a_2)\cdots(x - a_k)$ be a product of linear
+factors. Then $a \mid b$ implies (by the division algorithm)
+\[
+  a(x) \;=\; q(x)\,b(x) + r(x),
+\]
+and evaluating at each root $a_i$ gives
+\[
+  a(a_i) \;=\; r(a_i) \qquad \text{for all } i \in [k].
+\]
+(Since $b(a_i) = 0$, the term $q(x)\,b(x)$ vanishes.)
+
+\paragraph{Polynomial tower.}
+Polynomial rings can be nested (iterated extension):
+\[
+  \bigl(\bigl(\bigl(\F[X_1]\bigr)[X_2]\bigr)[X_3]\bigr)[X_4] \;\cdots
+\]
+This \emph{tower of polynomial rings} is used, for example, to construct
+extension fields.
+
+%=============================================================
+\section{The Schwartz-Zippel Lemma}
+\label{sec:schwartz-zippel}
+%=============================================================
+
+The Schwartz-Zippel lemma is one of the most fundamental tools in
+theoretical computer science and cryptography. It says that a nonzero
+polynomial cannot vanish ``too often'' when evaluated at random points.
+
+\begin{tcolorbox}[colback=yellow!10!white, colframe=orange!70!black,
+                  title=Lemma (Schwartz-Zippel), label=lem:sz]
+\textbf{Lemma 3.3 (Schwartz-Zippel).}
+Let $\F$ be any field, and let $g : \F^m \to \F$ be a nonzero $m$-variate
+polynomial of total degree at most $d$. Then on any finite set
+$S \subseteq \F$,
+\[
+  \Pr_{x \leftarrow S^m}\!\bigl[g(x) = 0\bigr] \;\leq\; \frac{d}{|S|}.
+\]
+\end{tcolorbox}
+
+\noindent
+(Statement from Thaler's textbook.)
+
+\subsection{Proof Sketch (by Induction on $m$)}
+
+\begin{proof}
+\textbf{Base case ($m = 1$):}
+By the Fundamental Theorem of Algebra (FTA), a nonzero univariate polynomial
+of degree $d$ has at most $d$ roots. Therefore,
+\[
+  \Pr_{x \leftarrow S}\!\bigl[g(x) = 0\bigr] \;\leq\; \frac{d}{|S|}.
+\]
+
+\textbf{Inductive step:}
+Assume the lemma holds for $m - 1$ variables. Take a nonzero $m$-variate
+polynomial $g(x_1, \ldots, x_m)$ of total degree at most $d$.
+
+Write $g$ as a polynomial in $x_1$ with coefficients that are
+$(m-1)$-variate polynomials in $x_2, \ldots, x_m$:
+\[
+  g(x_1, \ldots, x_m) \;=\; \sum_{i=0}^{d} x_1^i \,g_i(x_2, \ldots, x_m).
+\]
+
+Sample $r_2, \ldots, r_m \leftarrow S$ uniformly and independently.
+Apply the inductive hypothesis to each nonzero $g_i$ to bound the
+probability that $g_i(r_2, \ldots, r_m) = 0$, and combine using a
+union bound (or conditional probability argument) to obtain the result.
+\end{proof}
+
+\begin{remark}
+  The key insight is that if $g$ is nonzero, then at least one coefficient
+  polynomial $g_i$ is also nonzero. By the inductive hypothesis, the randomly
+  chosen values $r_2, \ldots, r_m$ make $g_i$ nonzero (as a univariate
+  polynomial in $x_1$) with good probability. Then the base case applies.
+\end{remark}
+
+%=============================================================
+\section{A Randomized Protocol for String Equality}
+\label{sec:string-equality}
+%=============================================================
+
+\subsection{Problem Setup}
+
+We consider the classic \emph{communication complexity} problem of
+string equality:
+\begin{itemize}
+  \item \textbf{Alice} holds a string $s_A \in \{0,1\}^n$.
+  \item \textbf{Bob} holds a string $s_B \in \{0,1\}^n$.
+  \item They wish to determine whether $s_A = s_B$ while minimizing
+        the number of bits communicated.
+\end{itemize}
+
+\subsection{The Protocol}
+
+The key idea is to encode each string as a polynomial over a finite field
+$\F$, and use polynomial evaluation at a random point as a fingerprint.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!40!black,
+                  title=Polynomial Encoding of a String]
+Given a string $s = (s_0, s_1, \ldots, s_{n-1}) \in \{0,1\}^n$, define
+its associated polynomial:
+\[
+  s(x) \;:=\; s_0 + s_1 x + s_2 x^2 + \cdots + s_{n-1} x^{n-1}
+         \;\in\; \F[x].
+\]
+This is a univariate polynomial of degree at most $n-1$ over $\F$.
+\end{tcolorbox}
+
+The full protocol is described below:
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=2.2cm,
+    every node/.style={font=\small},
+    arr/.style={-{Stealth[length=6pt]}, thick, color=blue!70!black}
+  ]
+
+  % Parties
+  \node[align=center] (alice) {%
+    \underline{\textbf{Alice}} \\[2pt]
+    $s_A \in \{0,1\}^n$
+  };
+  \node[align=center, right=8cm of alice] (bob) {%
+    \underline{\textbf{Bob}} \\[2pt]
+    $s_B \in \{0,1\}^n$
+  };
+
+  % Alice action
+  \node[below=0.8cm of alice, align=left] (aliceact1) {%
+    Sample $r \xleftarrow{\$} \F$
+  };
+
+  % Arrow: r to Bob
+  \coordinate (rmid) at ($(aliceact1)!0.5!(aliceact1 -| bob)$);
+  \draw[arr] (aliceact1.east) -- node[above]{$r \in \F$} (aliceact1 -| bob);
+
+  % Bob action
+  \node[below=1.6cm of aliceact1, align=left, xshift=8cm] (bobact) {%
+    $\bullet\; s_B(x) := s_{B,0} + s_{B,1}x + \cdots + s_{B,n-1}x^{n-1}$ \\
+    $\bullet\;$ Compute $t \leftarrow s_B(r)$
+  };
+
+  % Arrow: t to Alice
+  \node[below=3.5cm of aliceact1, align=left] (aliceact2) {%
+    $\bullet\; s_A(x) := s_{A,0} + s_{A,1}x + \cdots + s_{A,n-1}x^{n-1}$ \\
+    $\bullet\;$ Compute $u \leftarrow s_A(r)$ \\
+    $\bullet\;$ If $t = u$: output ``equal''; else: ``not equal''
+  };
+  \draw[arr] (bobact.west) -- node[above]{$t \in \F$} (aliceact2 -| bobact);
+
+\end{tikzpicture}
+\end{center}
+
+\medskip
+
+More concisely, the protocol proceeds as follows:
+
+\begin{algorithm}[H]
+\caption{Randomized String Equality Protocol}
+\begin{algorithmic}[1]
+  \State \textbf{Alice's setup:} Define $s_A(x) := s_{A,0} + s_{A,1}x + \cdots + s_{A,n-1}x^{n-1} \in \F[x]$.
+  \State \textbf{Alice samples:} $r \xleftarrow{\$} \F$ uniformly at random.
+  \State \textbf{Alice $\to$ Bob:} Send $r \in \F$.
+  \State \textbf{Bob computes:} Define $s_B(x) := s_{B,0} + s_{B,1}x + \cdots + s_{B,n-1}x^{n-1}$.
+         Compute $t \leftarrow s_B(r)$.
+  \State \textbf{Bob $\to$ Alice:} Send $t \in \F$.
+  \State \textbf{Alice computes:} $u \leftarrow s_A(r)$.
+  \State \textbf{Alice decides:} If $t = u$, output ``equal''; otherwise output ``not equal''.
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Correctness and Error Analysis}
+
+\paragraph{Completeness (no false negatives).}
+If $s_A = s_B$, then $s_A(x) = s_B(x)$ as polynomials, so $s_A(r) = s_B(r)$
+for every $r$. The protocol always outputs ``equal.''
+
+\paragraph{Soundness (bounding false positives).}
+If $s_A \neq s_B$, then the polynomial
+\[
+  h(x) \;:=\; s_A(x) - s_B(x)
+\]
+is a \emph{nonzero} polynomial of degree at most $n - 1$. By the
+Schwartz-Zippel lemma (applied with $m = 1$, $d = n-1$, and $S = \F$),
+\[
+  \Pr_{r \leftarrow \F}\!\bigl[h(r) = 0\bigr] \;\leq\; \frac{n-1}{|\F|}.
+\]
+If we choose $|\F| = \mathrm{poly}(n)$, the false-positive probability is
+at most $(n-1)/|\F|$, which is \emph{inverse polynomial} in $n$.
+
+\paragraph{Communication complexity.}
+\begin{itemize}
+  \item Alice sends $r$: $O(\log |\F|)$ bits.
+  \item Bob sends $t$: $O(\log |\F|)$ bits.
+  \item Total: $O(\log |\F|) = O(\log n)$ bits (for $|\F| = \mathrm{poly}(n)$).
+\end{itemize}
+
+\begin{tcolorbox}[colback=green!8!white, colframe=green!50!black,
+                  title=Key Takeaway]
+By choosing $|\F| = \mathrm{poly}(n)$, the Schwartz-Zippel lemma guarantees
+an inverse-polynomial error probability with only $O(\log n)$ bits of
+communication. This is an \textbf{exponential improvement} over the
+deterministic setting, which requires $\Omega(n)$ bits in the worst case.
+\end{tcolorbox}
+
+%=============================================================
+\section{Efficient Algorithms for Polynomials}
+\label{sec:poly-algorithms}
+%=============================================================
+
+The final topic of this lecture concerns efficient computation with
+polynomials, which is essential for building practical ZKP systems.
+
+The main computational bottleneck in many protocols is the evaluation
+and manipulation of high-degree polynomials. Two important settings arise:
+
+\begin{enumerate}
+  \item \textbf{Polynomial evaluation at a single point:} Given polynomial
+        $f$ of degree $d$ and a point $r$, compute $f(r)$.
+        This can be done in $O(d)$ field operations using
+        \emph{Horner's method}:
+        \[
+          f(x) = a_0 + x\bigl(a_1 + x(a_2 + \cdots + x\,a_d)\bigr).
+        \]
+
+  \item \textbf{Multi-point evaluation:} Given $f$ of degree $d$ and
+        evaluation points $r_1, \ldots, r_k$, compute
+        $f(r_1), \ldots, f(r_k)$ efficiently.
+
+  \item \textbf{Polynomial multiplication:} Given polynomials $a$ and $b$
+        of degrees $d_a$ and $d_b$, compute $a \cdot b$ (degree
+        $d_a + d_b$). Naive convolution costs $O(d_a d_b)$; the
+        Fast Fourier Transform (FFT) reduces this to
+        $O(n \log n)$ where $n = d_a + d_b + 1$.
+\end{enumerate}
+
+\begin{remark}
+  The \emph{computational questions} for this section (evaluation,
+  interpolation, FFT-based multiplication, and MSM as discussed in
+  Section~\ref{sec:ec-computing}) are central to the efficiency of
+  ZKP systems. They will be revisited in greater depth in later lectures.
+\end{remark}
+
+%=============================================================
+\appendix
+\section*{Summary of Key Results}
+%=============================================================
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Result} & \textbf{Statement} \\
+\hline
+Hasse's Theorem & $\bigl||E/\Fp| - p\bigr| \lesssim \sqrt{p}$ \\
+\hline
+Schoof's Algorithm & $|E/\Fp|$ is computable in polynomial time \\
+\hline
+Schwartz-Zippel & $\Pr_{x\leftarrow S^m}[g(x)=0] \leq d/|S|$ for nonzero $g$ of total degree $d$ \\
+\hline
+String equality & $O(\log n)$ communication with $O(1/\mathrm{poly}(n))$ error \\
+\hline
+Horner's method & Evaluate degree-$d$ poly in $O(d)$ field ops \\
+\hline
+\end{tabular}
+\end{center}
+
+\end{document}
