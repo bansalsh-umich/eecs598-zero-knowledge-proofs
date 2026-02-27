@@ -1,0 +1,489 @@
+%
+% EECS 498/CSE 598: Zero-Knowledge Proofs
+% Lecture 3: Groups, Elliptic Curves, and Pairings
+% Instructor: Paul Grubbs
+% University of Michigan, Winter 2026
+%
+
+\documentclass[11pt]{article}
+
+%----------------------- Packages -----------------------
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+%----------------------- Page style -----------------------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 3: Groups, Elliptic Curves, and Pairings}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+%----------------------- Theorem environments -----------------------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+%----------------------- Macros -----------------------
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+\DeclareMathOperator{\ord}{ord}
+\newcommand{\GG}{\mathbb{G}}
+
+%=============================================================
+\begin{document}
+%=============================================================
+
+%----------------------- Title block -----------------------
+\begin{center}
+  {\Large \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}} \\[4pt]
+  {\large \textbf{Lecture 3: Groups, Elliptic Curves, and Pairings}} \\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+   \texttt{paulgrub@umich.edu} \quad Beyster 4709} \\[2pt]
+  {\normalsize University of Michigan \quad Winter 2026}
+\end{center}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Agenda -----------------------
+\paragraph{Agenda.}
+\begin{enumerate}[label=(\arabic*)]
+  \item Announcements
+  \item Montgomery arithmetic
+  \item Basics of groups
+  \item Elliptic curve groups
+  \item Pairings of elliptic curves
+\end{enumerate}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Announcements -----------------------
+\paragraph{Announcements.}
+\begin{itemize}
+  \item Project 1 is online.
+  \item Autograder is working.
+  \item There is a new cryptocurrency called ``zero knowledge proof coin'' \ldots
+    (humorously noted by the instructor).
+\end{itemize}
+
+%=============================================================
+\section{Montgomery Arithmetic ($*$)}
+%=============================================================
+
+This section reviews \emph{Montgomery arithmetic}, a technique for
+performing modular arithmetic efficiently in software.  The star ($*$)
+indicates optional/advanced material.
+
+%------------------------------------------------------------
+\subsection{Motivation: How to Do Modular Arithmetic in Code?}
+%------------------------------------------------------------
+
+Naive modular addition of two residues $[a]_p, [b]_p \in \{0,\ldots,p-1\}$:
+\[
+  \textsc{AddMod}([a]_p,\,[b]_p):\quad
+  c \leftarrow [a]_p + [b]_p;\quad
+  [c]_p \leftarrow c \bmod p.
+\]
+The final reduction $c \bmod p$ requires a division, which is expensive.
+For modular \emph{multiplication} the situation is worse: $a \cdot b$ can
+be up to $2n$ bits long, making reduction even more costly.
+
+%------------------------------------------------------------
+\subsection{The Montgomery Representation}
+%------------------------------------------------------------
+
+\begin{tcolorbox}[colback=blue!5, colframe=blue!40, title=Key Idea]
+Choose an \emph{auxiliary modulus} $R$ with $R > p$ and $\gcd(p, R) = 1$.
+Represent $a$ in \textbf{Montgomery form} as $\bar{a} = aR \bmod p$.
+\end{tcolorbox}
+
+\noindent Because $\gcd(p,R)=1$, $R^{-1} \bmod p$ exists.  Addition in
+Montgomery form is free:
+\[
+  \bar{a} + \bar{b} = aR \bmod p + bR \bmod p = (a+b)R \bmod p = \overline{a+b}.
+\]
+
+In practice, $R = 2^k$ where $k$ is a multiple of the machine word size,
+so multiplication by $R$ is a bit-shift and reduction mod $R$ is a bitwise
+mask---both extremely cheap.
+
+%------------------------------------------------------------
+\subsection{Montgomery Multiplication: \textsc{MontMul}}
+%------------------------------------------------------------
+
+To multiply $\bar{a} = aR \bmod p$ and $\bar{b} = bR \bmod p$ and
+obtain $\overline{ab} = abR \bmod p$, we use the following algorithm.
+It requires a precomputed value $p' = -p^{-1} \bmod R$ (so
+$p \cdot p' \equiv -1 \pmod{R}$).
+
+\begin{algorithm}
+\caption{$\textsc{MontMul}(\bar{a},\,\bar{b},\,p,\,p',\,R)$}
+\begin{algorithmic}[1]
+\Require $\bar{a} = aR \bmod p$, $\bar{b} = bR \bmod p$,
+         prime $p$, $p' = -p^{-1} \bmod R$, $R > p$ with $\gcd(p,R)=1$.
+\Ensure $abR \bmod p$ (i.e., $\overline{ab}$).
+\State $T \leftarrow \bar{a} \cdot \bar{b}$
+  \Comment{$T \in [0, (p-1)^2]$; no reduction yet}
+\State $m \leftarrow \bigl((T \bmod R)\cdot p'\bigr) \bmod R$
+  \Comment{$m \in [0, R-1]$}
+\State $t \leftarrow (T + m\,p) / R$
+  \Comment{exact integer division; see Claim~\ref{claim:divisible}}
+\If{$t \geq p$}
+  \State \Return $t - p$
+\Else
+  \State \Return $t$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\begin{claim}[Correctness of output range]
+  $t \in [0, 2p-1]$, so the conditional subtraction suffices.
+\end{claim}
+\begin{proof}
+  $T \in [0, (R-1)^2]$ and $m \in [0, R-1]$, so
+  $T + mP \leq (R-1)^2 + (R-1)P$.  Dividing by $R$:
+  $t \leq \frac{(R-1)^2 + (R-1)P}{R} = (R-1) + \frac{(R-1)P}{R} < R - 1 + P$.
+  Since $R > P$, we get $t < 2P - 1$, i.e., $t \in [0, 2P-1]$.
+\end{proof}
+
+\begin{claim}[$R$ divides $T + mP$ over $\Z$]
+  \label{claim:divisible}
+  $R \mid (T + mP)$.
+\end{claim}
+\begin{proof}
+  \begin{align*}
+    T + mP
+    &= T + \bigl((T \bmod R)\cdot p' \bmod R\bigr)\cdot P \\
+    &\equiv T + T \cdot p' \cdot P \pmod{R} \\
+    &= T(1 + p'P) \\
+    &\equiv T \cdot 0 \pmod{R}
+      \quad \text{since } p'P \equiv -1 \pmod{R} \\
+    &= 0. \qquad \checkmark
+  \end{align*}
+\end{proof}
+
+\begin{claim}[Output is $abR \bmod p$]
+  \textsc{MontMul}$(\bar{a},\bar{b},p,p',R)$ outputs $abR \bmod p$.
+\end{claim}
+\begin{proof}
+  $t = (T + mP)/R \equiv TR^{-1} \equiv \bar{a}\cdot\bar{b}\cdot R^{-1}
+  = aR \cdot bR \cdot R^{-1} = abR \pmod{p}$.
+  The conditional subtraction ensures $t \in [0,p-1]$.
+\end{proof}
+
+%=============================================================
+\section{Algebraic Groups}
+%=============================================================
+
+%------------------------------------------------------------
+\subsection{Definition and Basic Properties}
+%------------------------------------------------------------
+
+\begin{definition}[Group]
+  Let $S$ be a set and $\otimes : S \times S \to S$ a \emph{binary
+  operation}.  The pair $(S, \otimes)$ is a \textbf{group} if:
+  \begin{enumerate}[label=(\roman*)]
+    \item \textbf{Identity.} There exists $\mathbf{1} \in S$ such that
+      $a \otimes \mathbf{1} = a$ and $\mathbf{1} \otimes a = a$ for all
+      $a \in S$.
+    \item \textbf{Associativity.} $(a \otimes b) \otimes c = a \otimes
+      (b \otimes c)$ for all $a,b,c \in S$.
+    \item \textbf{Inverses.} For every $a \in S$ there exists $x \in S$
+      such that $a \otimes x = \mathbf{1}$ and $x \otimes a = \mathbf{1}$.
+  \end{enumerate}
+  If additionally $a \otimes b = b \otimes a$ for all $a, b \in S$, the
+  group is called \textbf{Abelian} (or \emph{commutative}).
+  If there exists $a \in S$ such that
+  $\{a, a^2, a^3, \ldots, a^{|S|}\} = S$, the group is \textbf{cyclic}
+  (and $a$ is called a \emph{generator}).
+\end{definition}
+
+\begin{definition}[Order of an element]
+  The \textbf{order} of $a \in S$, written $\ord(a)$, is the smallest
+  positive integer $n$ such that $a^n = \mathbf{1}$ (where $a^n$ denotes
+  $n$-fold application of $\otimes$).
+\end{definition}
+
+\begin{fact}[Lagrange's theorem]
+  For any element $a$ in a finite group $(S, \otimes)$:
+  $\ord(a) \leq |S|$ and $\ord(a) \mid |S|$.
+\end{fact}
+
+%------------------------------------------------------------
+\subsection{Examples of Groups}
+%------------------------------------------------------------
+
+\begin{example}
+  The following are standard groups:
+  \begin{itemize}
+    \item $(\Z, +)$: integers under addition (infinite, Abelian).
+    \item $(\Z_p, \times \setminus \{0\})$: nonzero integers mod a prime
+      $p$ under multiplication; this is a cyclic group of order $p-1$.
+    \item \emph{Symmetries of a rectangle}: the four symmetries
+      (identity, horizontal flip, vertical flip, $180^\circ$ rotation)
+      form a group of order 4 (the Klein four-group), Abelian but not
+      cyclic.
+    \item $\mathrm{GL}_n(\F_p)$ (\emph{general linear group}): invertible
+      $n \times n$ matrices over $\F_p$ under matrix multiplication; non-Abelian
+      for $n \geq 2$.
+  \end{itemize}
+\end{example}
+
+%=============================================================
+\section{The Discrete Logarithm Problem}
+%=============================================================
+
+\begin{definition}[Discrete Logarithm Problem (DLP)]
+  Let $\GG = \langle g \rangle$ be a cyclic group of order $q$ with
+  generator $g$.  Given $h \in \GG$, find the unique $x \in
+  \{0, 1, \ldots, q-1\}$ such that $g^x = h$.  The integer $x$ is the
+  \textbf{discrete logarithm} of $h$ with respect to $g$, written
+  $x = \log_g h$.
+\end{definition}
+
+The DLP is believed to be computationally hard in well-chosen groups
+(e.g., prime-order subgroups of $\Z_p^*$ and elliptic curve groups).
+This hardness underlies many cryptographic schemes.
+
+%=============================================================
+\section{Elliptic Curve Groups}
+%=============================================================
+
+%------------------------------------------------------------
+\subsection{Historical Context}
+%------------------------------------------------------------
+
+Elliptic curves have a rich history in both mathematics and cryptography:
+\begin{itemize}
+  \item \textbf{1986:} Elliptic curve factorization method (Lenstra).
+  \item \textbf{Mid-1980s:} First proposals for EC-based cryptography by
+    Koblitz and Miller.
+  \item \textbf{1980s--1990s:} Initial work on efficient ECC; many patents
+    filed by Certicom.
+  \item \textbf{1993:} MOV attack breaks supersingular curves using the
+    Weil pairing.
+  \item \textbf{2001:} Identity-based encryption from the Weil pairing
+    (Boneh--Franklin).
+  \item \textbf{Late 1990s -- mid-2000s:} Initial proposals for
+    isogeny-based cryptography.
+  \item \textbf{2011:} SIDH (Supersingular Isogeny Diffie--Hellman)
+    published by Jao and de Feo.
+  \item \textbf{2022:} SIDH completely broken by Castryck and Decru.
+\end{itemize}
+
+%------------------------------------------------------------
+\subsection{Elliptic Curves over Finite Fields}
+%------------------------------------------------------------
+
+Elliptic curves defined over $\mathbb{R}$ are smooth cubic plane curves.
+Varying the coefficients $a$ and $b$ changes the shape considerably (the
+left panel below illustrates typical real-valued shapes for several $(a,b)$
+pairs).  Over a finite field $\F_p$, the curve becomes a \emph{finite set
+of points} (right panel: $y^2 = x^3 - x$ over $\F_{61}$).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  % Left: schematic real-valued elliptic curve shapes for two parameter choices
+  % Shape 1: two components (e.g., a<0, small b)
+  \begin{scope}[xshift=0cm]
+    \draw[->] (-1.5,0)--(1.5,0) node[right]{$x$};
+    \draw[->] (0,-1.5)--(0,1.5) node[above]{$y$};
+    \draw[blue!70, thick, domain=-1.2:1.2, samples=200]
+      plot (\x, {sqrt(max(0,\x^3-\x+0.5))});
+    \draw[blue!70, thick, domain=-1.2:1.2, samples=200]
+      plot (\x, {-sqrt(max(0,\x^3-\x+0.5))});
+    \node[below] at (0,-1.7) {\small $y^2=x^3-x+0.5$};
+  \end{scope}
+  % Right: schematic finite field scatter (conceptual dots only)
+  \begin{scope}[xshift=5cm]
+    \draw[->] (-0.2,0)--(3.5,0) node[right]{\small $x$};
+    \draw[->] (0,-0.2)--(0,3.5) node[above]{\small $y$};
+    % A few representative points from y^2=x^3-x over F_61
+    \foreach \px/\py in {
+      0/0, 1/0, 60/0,
+      0.3/0.6, 0.3/2.4, 0.5/0.9, 0.5/2.1,
+      0.8/1.5, 1.0/1.0, 1.0/2.0, 1.2/0.8,
+      1.5/1.5, 1.8/0.7, 2.0/1.2, 2.0/1.8,
+      2.2/1.0, 2.5/0.5, 2.8/1.4, 3.0/1.0,
+      3.2/0.6, 3.2/2.4}{
+      \fill[red!60] (\px,\py) circle (1.5pt);
+    }
+    \node[below] at (1.7,-0.3) {\small $y^2=x^3-x$ over $\F_{61}$};
+  \end{scope}
+\end{tikzpicture}
+\caption{Left: a real elliptic curve. Right: schematic of a finite-field
+elliptic curve (conceptual; representative points shown).}
+\end{figure}
+
+%------------------------------------------------------------
+\subsection{Definition and Group Law}
+%------------------------------------------------------------
+
+\begin{definition}[Elliptic curve over $\F_p$]
+  Let $p > 3$ be prime and $a, b \in \F_p$ with $4a^3 + 27b^2 \neq 0$
+  (the \emph{non-singularity} condition).  The \textbf{elliptic curve}
+  $E$ over $\F_p$ with parameters $(a,b)$ is:
+  \[
+    \tilde{E}(\F_p) \;=\;
+    \bigl\{(x, y) \in \F_p^2 \;\big|\; y^2 = x^3 + ax + b\bigr\},
+  \]
+  and
+  \[
+    E(\F_p) \;=\; \tilde{E}(\F_p) \cup \{O\},
+  \]
+  where $O$ is the \textbf{point at infinity} (the identity element).
+\end{definition}
+
+\begin{theorem}
+  $E(\F_p)$ is an Abelian group under \textbf{point addition}, where:
+  \begin{itemize}
+    \item $O$ is the identity: $P + O = O + P = P$.
+    \item \textbf{Negation:} $-P = (x, -y)$ for $P = (x, y)$;
+      $P + (-P) = O$.
+    \item \textbf{Commutativity:} $P + Q = Q + P$.
+    \item \textbf{Addition formula} (for $P \neq \pm Q$, both affine):
+      if $P = (x_1, y_1)$ and $Q = (x_2, y_2)$,
+      \[
+        \lambda = \frac{y_2 - y_1}{x_2 - x_1},\quad
+        x_3 = \lambda^2 - x_1 - x_2,\quad
+        y_3 = \lambda(x_1 - x_3) - y_1.
+      \]
+  \end{itemize}
+\end{theorem}
+
+\noindent\textbf{Geometric intuition.}
+Over $\mathbb{R}$, the group law has a beautiful geometric interpretation:
+to add $P$ and $Q$, draw the line through them, find the third intersection
+with the curve, and reflect across the $x$-axis.  The picture below
+illustrates this.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Elliptic curve (schematic)
+  \draw[blue!70, thick, domain=-1.3:2.0, samples=300]
+    plot (\x, {sqrt(max(0,\x^3-\x+1))});
+  \draw[blue!70, thick, domain=-1.3:2.0, samples=300]
+    plot (\x, {-sqrt(max(0,\x^3-\x+1))});
+  % Points P, Q, -(P+Q), P+Q
+  \coordinate (P) at (-0.8, {sqrt((-0.8)^3-(-0.8)+1)});
+  \coordinate (Q) at (0.5, {sqrt(0.5^3-0.5+1)});
+  \coordinate (R) at (1.6, {sqrt(1.6^3-1.6+1)});
+  \coordinate (PQ) at (1.6, {-sqrt(1.6^3-1.6+1)});
+  % Secant line
+  \draw[red, dashed, shorten >=-5pt, shorten <=-5pt] (P) -- (R);
+  % Vertical reflection line
+  \draw[gray, dashed] (R) -- (PQ);
+  % Points
+  \fill (P) circle (2pt) node[left] {$P$};
+  \fill (Q) circle (2pt) node[right] {$Q$};
+  \fill (R) circle (2pt) node[right] {$-(P{+}Q)$};
+  \fill (PQ) circle (2pt) node[right] {$P{+}Q$};
+  % Axes
+  \draw[->] (-1.5,0)--(2.3,0) node[right]{$x$};
+  \draw[->] (0,-1.5)--(0,2.0) node[above]{$y$};
+\end{tikzpicture}
+\caption{Geometric point addition on an elliptic curve over $\mathbb{R}$.}
+\end{figure}
+
+%------------------------------------------------------------
+\subsection{The Discrete Logarithm Problem on Elliptic Curves}
+%------------------------------------------------------------
+
+In the elliptic curve setting, the DLP reads: given a generator
+$G \in E(\F_p)$ and a point $Q = kG$ (i.e., $G$ added to itself $k$
+times), find $k$.  No sub-exponential algorithm is known for
+\emph{generic} elliptic curves; this makes elliptic curve groups very
+attractive for cryptography---smaller key sizes than $\Z_p^*$ for the
+same security level.
+
+%=============================================================
+\section{Pairings of Elliptic Curves}
+%=============================================================
+
+%------------------------------------------------------------
+\subsection{What Is a Pairing?}
+%------------------------------------------------------------
+
+\begin{definition}[Bilinear pairing]
+  Let $\GG_1, \GG_2, \GG_T$ be groups of prime order $q$.  A map
+  $e : \GG_1 \times \GG_2 \to \GG_T$ is a \textbf{bilinear pairing} if:
+  \begin{enumerate}[label=(\roman*)]
+    \item \textbf{Bilinearity:} $e(aP, bQ) = e(P,Q)^{ab}$ for all
+      $a, b \in \Z$ and $P \in \GG_1$, $Q \in \GG_2$.
+    \item \textbf{Non-degeneracy:} $e(G_1, G_2) \neq 1_{\GG_T}$ where
+      $G_1, G_2$ are generators of $\GG_1, \GG_2$.
+    \item \textbf{Efficiency:} $e$ can be computed in polynomial time.
+  \end{enumerate}
+\end{definition}
+
+In practice, $\GG_1$ and $\GG_2$ are elliptic curve groups and $\GG_T$
+is a multiplicative subgroup of a finite field extension.  The Weil
+pairing and the Tate pairing are the canonical examples.
+
+%------------------------------------------------------------
+\subsection{Constructive Uses of Pairings}
+%------------------------------------------------------------
+
+Pairings enable cryptographic constructions impossible from the DLP alone:
+\begin{itemize}
+  \item \textbf{Identity-Based Encryption (IBE):} Boneh--Franklin (2001)
+    used the Weil pairing to build the first practical IBE scheme.
+  \item \textbf{Short signatures:} BLS signatures (Boneh--Lynn--Shacham)
+    use pairings to achieve very short signature sizes.
+  \item \textbf{ZK proof systems:} Many modern proof systems (Groth16,
+    PLONK, etc.) rely on pairing-based polynomial commitment schemes such
+    as KZG.
+\end{itemize}
+
+%------------------------------------------------------------
+\subsection{Computational Problems on Pairings}
+%------------------------------------------------------------
+
+Three related hardness assumptions arise:
+\begin{itemize}
+  \item \textbf{Computational Diffie--Hellman (CDH):} given $(g, g^a,
+    g^b)$, compute $g^{ab}$.
+  \item \textbf{Decisional Diffie--Hellman (DDH):} given $(g, g^a, g^b,
+    h)$, decide if $h = g^{ab}$.  Note: DDH is \emph{easy} in pairing
+    groups (check $e(g^a, g^b) = e(g,h)$), so DDH does not hold in
+    $\GG_1$ directly.
+  \item \textbf{$q$-Strong Diffie--Hellman ($q$-SDH):} given
+    $(g, g^\alpha, g^{\alpha^2}, \ldots, g^{\alpha^q})$, compute
+    $(c, g^{1/(\alpha+c)})$ for any $c$.  This underlies many
+    pairing-based protocols including KZG commitments.
+\end{itemize}
+
+%=============================================================
+\end{document}
