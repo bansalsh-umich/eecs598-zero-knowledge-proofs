@@ -9,13 +9,11 @@
 
 %----------------------- Packages -----------------------
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -23,6 +21,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 %----------------------- Page style -----------------------
 \pagestyle{fancy}
@@ -33,28 +36,6 @@
 \rfoot{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
-
-%----------------------- Theorem environments -----------------------
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-%----------------------- Macros -----------------------
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-\newcommand{\GG}{\mathbb{G}}
 
 %=============================================================
 \begin{document}
@@ -74,7 +55,7 @@
 \medskip
 
 %----------------------- Agenda -----------------------
-\paragraph{Agenda.}
+\paragraph{Agenda}
 \begin{enumerate}[label=(\arabic*)]
   \item Announcements
   \item Montgomery arithmetic
@@ -88,7 +69,7 @@
 \medskip
 
 %----------------------- Announcements -----------------------
-\paragraph{Announcements.}
+\paragraph{Announcements}
 \begin{itemize}
   \item Project 1 is online.
   \item Autograder is working.
@@ -264,8 +245,8 @@ $p \cdot p' \equiv -1 \pmod{R}$).
 %=============================================================
 
 \begin{definition}[Discrete Logarithm Problem (DLP)]
-  Let $\GG = \langle g \rangle$ be a cyclic group of order $q$ with
-  generator $g$.  Given $h \in \GG$, find the unique $x \in
+  Let $\G = \langle g \rangle$ be a cyclic group of order $q$ with
+  generator $g$.  Given $h \in \G$, find the unique $x \in
   \{0, 1, \ldots, q-1\}$ such that $g^x = h$.  The integer $x$ is the
   \textbf{discrete logarithm} of $h$ with respect to $g$, written
   $x = \log_g h$.
@@ -311,7 +292,7 @@ left panel below illustrates typical real-valued shapes for several $(a,b)$
 pairs).  Over a finite field $\F_p$, the curve becomes a \emph{finite set
 of points} (right panel: $y^2 = x^3 - x$ over $\F_{61}$).
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[scale=0.72]
   % Left: schematic real-valued elliptic curve shapes for two parameter choices
@@ -388,7 +369,7 @@ to add $P$ and $Q$, draw the line through them, find the third intersection
 with the curve, and reflect across the $x$-axis.  The picture below
 illustrates this.
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[scale=1.0]
   % Elliptic curve (schematic)
@@ -437,18 +418,18 @@ same security level.
 %------------------------------------------------------------
 
 \begin{definition}[Bilinear pairing]
-  Let $\GG_1, \GG_2, \GG_T$ be groups of prime order $q$.  A map
-  $e : \GG_1 \times \GG_2 \to \GG_T$ is a \textbf{bilinear pairing} if:
+  Let $\G_1, \G_2, \G_T$ be groups of prime order $q$.  A map
+  $e : \G_1 \times \G_2 \to \G_T$ is a \textbf{bilinear pairing} if:
   \begin{enumerate}[label=(\roman*)]
     \item \textbf{Bilinearity:} $e(aP, bQ) = e(P,Q)^{ab}$ for all
-      $a, b \in \Z$ and $P \in \GG_1$, $Q \in \GG_2$.
-    \item \textbf{Non-degeneracy:} $e(G_1, G_2) \neq 1_{\GG_T}$ where
-      $G_1, G_2$ are generators of $\GG_1, \GG_2$.
+      $a, b \in \Z$ and $P \in \G_1$, $Q \in \G_2$.
+    \item \textbf{Non-degeneracy:} $e(G_1, G_2) \neq 1_{\G_T}$ where
+      $G_1, G_2$ are generators of $\G_1, \G_2$.
     \item \textbf{Efficiency:} $e$ can be computed in polynomial time.
   \end{enumerate}
 \end{definition}
 
-In practice, $\GG_1$ and $\GG_2$ are elliptic curve groups and $\GG_T$
+In practice, $\G_1$ and $\G_2$ are elliptic curve groups and $\G_T$
 is a multiplicative subgroup of a finite field extension.  The Weil
 pairing and the Tate pairing are the canonical examples.
 
@@ -478,7 +459,7 @@ Three related hardness assumptions arise:
   \item \textbf{Decisional Diffie--Hellman (DDH):} given $(g, g^a, g^b,
     h)$, decide if $h = g^{ab}$.  Note: DDH is \emph{easy} in pairing
     groups (check $e(g^a, g^b) = e(g,h)$), so DDH does not hold in
-    $\GG_1$ directly.
+    $\G_1$ directly.
   \item \textbf{$q$-Strong Diffie--Hellman ($q$-SDH):} given
     $(g, g^\alpha, g^{\alpha^2}, \ldots, g^{\alpha^q})$, compute
     $(c, g^{1/(\alpha+c)})$ for any $c$.  This underlies many

@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -15,6 +13,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -25,27 +28,7 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-
-% Additional commands used in this lecture
-\newcommand{\G}{\mathbb{G}}
-\newcommand{\Adv}{\mathsf{Adv}}
-\newcommand{\negl}{\mathsf{negl}}
+% Local macros for this lecture
 \newcommand{\MLE}{\widetilde{f}}
 
 \tcbuselibrary{theorems, skins, breakable}
@@ -98,28 +81,28 @@ We begin by recalling the setup from previous lectures and developing the theory
 \subsection{Setup and Definition}
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!50!black, title=Setup]
-Let $\{0,1\}^v$ denote the set of all $v$-bit strings (i.e.\ binary strings of length $v$).
+Let $\bits^v$ denote the set of all $v$-bit strings (i.e.\ binary strings of length $v$).
 Any function
 \[
-  f : \{0,1\}^v \to \mathbb{F}_p
+  f : \bits^v \to \Fp
 \]
-can be viewed as an element of $\mathbb{F}_p^{2^v}$, since it assigns a field element to
+can be viewed as an element of $\Fp^{2^v}$, since it assigns a field element to
 each of the $2^v$ binary strings of length $v$.
 \end{tcolorbox}
 
 \begin{definition}[Extension of a function]
-A $v$-variate polynomial $g$ \emph{extends} $f : \{0,1\}^v \to \mathbb{F}_p$ if
+A $v$-variate polynomial $g$ \emph{extends} $f : \bits^v \to \Fp$ if
 \[
-  \forall\, i \in \{0,1\}^v, \quad g(i) = f(i),
+  \forall\, i \in \bits^v, \quad g(i) = f(i),
 \]
-where $g : \mathbb{F}_p^v \to \mathbb{F}_p$ (writing $g(i) = g(i_0, i_1, \ldots, i_{v-1})$,
+where $g : \Fp^v \to \Fp$ (writing $g(i) = g(i_0, i_1, \ldots, i_{v-1})$,
 and where $i = \sum_j 2^j i_j$ interprets $i$ as an integer via its binary digits).
 \end{definition}
 
 \begin{remark}
-The notation $g(i)$ for $i \in \{0,1\}^v$ should be understood as evaluating the polynomial
-$g : \mathbb{F}_p^v \to \mathbb{F}_p$ at the point $(i_0, i_1, \ldots, i_{v-1}) \in \{0,1\}^v
-\subset \mathbb{F}_p^v$.
+The notation $g(i)$ for $i \in \bits^v$ should be understood as evaluating the polynomial
+$g : \Fp^v \to \Fp$ at the point $(i_0, i_1, \ldots, i_{v-1}) \in \bits^v
+\subset \Fp^v$.
 \end{remark}
 
 \subsection{Multilinear Extension (MLE): Existence and Uniqueness}
@@ -127,20 +110,20 @@ $g : \mathbb{F}_p^v \to \mathbb{F}_p$ at the point $(i_0, i_1, \ldots, i_{v-1}) 
 \begin{tcolorbox}[colback=green!5!white, colframe=green!50!black, title=Key Theorem (MLE)]
 \begin{theorem}[Existence and Uniqueness of the MLE]
 \label{thm:mle}
-Any function $f : \{0,1\}^v \to \mathbb{F}_p$ has a \emph{unique} multilinear extension
-$\widetilde{f} : \mathbb{F}_p^v \to \mathbb{F}_p$.
+Any function $f : \bits^v \to \Fp$ has a \emph{unique} multilinear extension
+$\widetilde{f} : \Fp^v \to \Fp$.
 \end{theorem}
 \end{tcolorbox}
 
 \begin{proof}
 \textbf{Construction.} Define the \emph{multilinear Lagrange basis polynomial} for a point
-$w \in \{0,1\}^v$ by
+$w \in \bits^v$ by
 \[
   \chi_w(x_1, \ldots, x_v)
   \;:=\;
   \prod_{i=1}^{v} \bigl( x_i w_i + (1 - x_i)(1 - w_i) \bigr).
 \]
-Observe that $\chi_w$ evaluates to 1 if $x = w$ and 0 for all other $x \in \{0,1\}^v$:
+Observe that $\chi_w$ evaluates to 1 if $x = w$ and 0 for all other $x \in \bits^v$:
 \[
   \chi_w(x) :=
   \begin{cases}
@@ -152,14 +135,14 @@ Now define
 \[
   \widetilde{f}(x_1, \ldots, x_v)
   \;:=\;
-  \sum_{w \in \{0,1\}^v} f(w)\,\chi_w(x_1, \ldots, x_v).
+  \sum_{w \in \bits^v} f(w)\,\chi_w(x_1, \ldots, x_v).
 \]
 
 We verify three claims:
 
 \medskip
 \textbf{Claim 1: $\widetilde{f}$ extends $f$.}
-For any $x \in \{0,1\}^v$, exactly one term in the sum is nonzero (the term $w = x$), so
+For any $x \in \bits^v$, exactly one term in the sum is nonzero (the term $w = x$), so
 $\widetilde{f}(x) = f(x) \cdot 1 = f(x)$.
 
 \medskip
@@ -173,8 +156,8 @@ polynomials; $\widetilde{f}$ is a linear combination of multilinear polynomials.
 
 \medskip
 \textbf{Claim 3: $\widetilde{f}$ is unique.}
-Any two multilinear extensions agree on all $2^v$ points of $\{0,1\}^v$.
-Their difference is a multilinear polynomial that vanishes on $\{0,1\}^v$.
+Any two multilinear extensions agree on all $2^v$ points of $\bits^v$.
+Their difference is a multilinear polynomial that vanishes on $\bits^v$.
 Since each variable has degree at most 1, one can show (by an inductive Schwartz--Zippel
 style argument) that the difference must be the zero polynomial.
 Hence $\widetilde{f}$ is the unique multilinear extension.
@@ -198,7 +181,7 @@ Writing $v/2$ for the midpoint, we have
   \chi_{w_{v/2},\ldots,w_{v}}(x_{v/2}, \ldots, x_v).
 \]
 This factored structure---``breaking $\widetilde{f}$ into chunks''---is the basis for efficient
-algorithms to evaluate $\widetilde{f}$ at arbitrary points in $\mathbb{F}_p^v$.
+algorithms to evaluate $\widetilde{f}$ at arbitrary points in $\Fp^v$.
 
 \begin{remark}[Interpretation of $\chi_w$]
 The factor for variable $i$ is:
@@ -216,7 +199,7 @@ This is a linear ``selector'' that equals 1 when $x_i = w_i$ and 0 when $x_i = 1
 \begin{remark}[Computational significance]
 The MLE $\widetilde{f}$ is central to many ZKP constructions (e.g., the sumcheck protocol).
 Given oracle access to evaluations of $\widetilde{f}$, a verifier can efficiently check
-properties of $f$ over the Boolean hypercube $\{0,1\}^v$ without reading all $2^v$ values.
+properties of $f$ over the Boolean hypercube $\bits^v$ without reading all $2^v$ values.
 \end{remark}
 
 %----------------------------------------------------------------------
@@ -230,7 +213,7 @@ zero-knowledge proofs.
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!50!black, title=Languages]
 \begin{definition}[Language]
-A \emph{language} $L$ is a subset of $\{0,1\}^*$ (the set of all finite binary strings).
+A \emph{language} $L$ is a subset of $\bits^*$ (the set of all finite binary strings).
 Equivalently, $L$ is the set of objects sharing some common property.
 \end{definition}
 \end{tcolorbox}
@@ -246,11 +229,11 @@ Equivalently, $L$ is the set of objects sharing some common property.
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!50!black, title=Relations]
 \begin{definition}[Relation]
-A \emph{relation} $R$ is a subset of $\{0,1\}^* \times \{0,1\}^*$.
+A \emph{relation} $R$ is a subset of $\bits^* \times \bits^*$.
 \end{definition}
 \end{tcolorbox}
 
-\paragraph{From language to relation via witnesses.}
+\paragraph{From language to relation via witnesses}
 Given a language $L$, we associate a relation $R_L$ via the notion of a \emph{witness}:
 \[
   x \in L \quad \iff \quad \exists\, w \text{ s.t. } (x, w) \in R_L.
@@ -304,12 +287,12 @@ Intuitively, $\mathbf{NP}$ is the class of problems where solutions (witnesses) 
 
 \begin{tcolorbox}[colback=purple!5!white, colframe=purple!60!black,
   title=Rank-One Constraint Systems (R1CS)]
-\textbf{Parameters:} A field $\mathbb{F}$, and integers $m, n \in \mathbb{N}$.
+\textbf{Parameters:} A field $\F$, and integers $m, n \in \N$.
 
 \medskip
 \textbf{Definition.}
-An R1CS instance is defined by three matrices $A, B, C \in \mathbb{F}^{m \times n}$.
-A vector $z \in \mathbb{F}^n$ \emph{satisfies} the R1CS if:
+An R1CS instance is defined by three matrices $A, B, C \in \F^{m \times n}$.
+A vector $z \in \F^n$ \emph{satisfies} the R1CS if:
 \[
   (A \cdot z) \circ (B \cdot z) = C \cdot z,
 \]
@@ -317,13 +300,13 @@ where $\circ$ denotes the \emph{Hadamard product} (element-wise multiplication o
 \end{tcolorbox}
 
 \begin{remark}[Hadamard product notation]
-The operator $\circ$ denotes element-wise multiplication of vectors: if $u, v \in \mathbb{F}^m$,
+The operator $\circ$ denotes element-wise multiplication of vectors: if $u, v \in \F^m$,
 then $(u \circ v)_i = u_i \cdot v_i$.  This is also called the ``Hadamard product''.
 \end{remark}
 
-\paragraph{Public and private parts of $z$.}
-The vector $z \in \mathbb{F}^n$ can be split into a \emph{public} part $x \in \mathbb{F}^\ell$
-and a \emph{private} part $w \in \mathbb{F}^{n-\ell}$, so that $z = (x, w)$, in the sense
+\paragraph{Public and private parts of $z$}
+The vector $z \in \F^n$ can be split into a \emph{public} part $x \in \F^\ell$
+and a \emph{private} part $w \in \F^{n-\ell}$, so that $z = (x, w)$, in the sense
 that $z$ satisfies the R1CS.
 
 \begin{remark}[R1CS and circuit satisfiability]
@@ -369,17 +352,17 @@ bounded adversaries.
 
 \subsection{Example Security Definition: The Discrete Logarithm Problem}
 
-The \emph{discrete logarithm} of $A$ in a group $\mathbb{G}$ with generator $G$ is the
+The \emph{discrete logarithm} of $A$ in a group $\G$ with generator $G$ is the
 integer $x$ such that $xG = A$ (using additive notation for the group operation).
 
 \begin{tcolorbox}[colback=gray!10!white, colframe=gray!60!black,
   title=Discrete Logarithm (DL) Security Game]
-\textbf{Game} $\mathrm{DL}^{\mathbb{G},G,p}(\mathcal{A})$:
+\textbf{Game} $\mathrm{DL}^{\G,G,p}(\mathcal{A})$:
 
 \medskip
 \begin{algorithmic}[1]
-  \State $x \xleftarrow{\$} \mathbb{Z}_p$ \Comment{Sample a random scalar}
-  \State $x' \xleftarrow{\$} \mathcal{A}(xG,\, \mathbb{G},\, G,\, p)$
+  \State $x \xleftarrow{\$} \Z_p$ \Comment{Sample a random scalar}
+  \State $x' \xleftarrow{\$} \mathcal{A}(xG,\, \G,\, G,\, p)$
          \Comment{Adversary attempts to recover $x$ given $xG$}
   \State \Return $\llbracket x = x' \rrbracket$
          \Comment{1 if adversary succeeds, 0 otherwise}
@@ -389,17 +372,17 @@ integer $x$ such that $xG = A$ (using additive notation for the group operation)
 \begin{definition}[DL Advantage]
 The \emph{DL advantage} of an adversary $\mathcal{A}$ is:
 \[
-  \Adv_{\mathrm{DL}}(\mathcal{A})
+  \advan_{\mathrm{DL}}(\mathcal{A})
   \;=\;
-  \Pr\!\left[\mathrm{DL}^{\mathbb{G},G,p}(\mathcal{A}) = 1\right].
+  \Pr\!\left[\mathrm{DL}^{\G,G,p}(\mathcal{A}) = 1\right].
 \]
 \end{definition}
 
 \begin{definition}[DL-hardness]
-The discrete logarithm problem is \emph{hard} in $\mathbb{G}$ if for all
+The discrete logarithm problem is \emph{hard} in $\G$ if for all
 non-uniform PPT adversaries $\mathcal{A}$:
 \[
-  \Adv_{\mathrm{DL}}(\mathcal{A}) = \negl(n),
+  \advan_{\mathrm{DL}}(\mathcal{A}) = \negl(n),
 \]
 where $n$ is the security parameter and $\negl(\cdot)$ denotes a negligible function.
 \end{definition}
@@ -407,14 +390,14 @@ where $n$ is the security parameter and $\negl(\cdot)$ denotes a negligible func
 \begin{remark}[The DL game, annotated]
 \hfill
 \begin{itemize}
-  \item The adversary receives $xG$ (i.e., a random group element), the group $\mathbb{G}$,
+  \item The adversary receives $xG$ (i.e., a random group element), the group $\G$,
         the generator $G$, and the group order $p$.
   \item The adversary outputs a guess $x'$ for the discrete log.
   \item In the game, the superscript $\mathcal{O}$ on $\mathcal{A}$ (visible in the slide)
         indicates that in some variants the adversary is given oracle access to additional
         resources.
-  \item ``DL hard in $\mathbb{G}$'' means: for all nuPPT $\mathcal{A}$,
-        $\Adv_{\mathrm{DL}}(\mathcal{A}) = \negl(n)$.
+  \item ``DL hard in $\G$'' means: for all nuPPT $\mathcal{A}$,
+        $\advan_{\mathrm{DL}}(\mathcal{A}) = \negl(n)$.
 \end{itemize}
 \end{remark}
 
@@ -496,7 +479,7 @@ revisited here if time allows.
 
 \begin{theorem}[Schwartz--Zippel Lemma]
 Let $p(x_1, \ldots, x_n)$ be a nonzero multivariate polynomial of total degree $d$ over
-a field $\mathbb{F}$.  Let $S \subseteq \mathbb{F}$ be a finite set.  Then:
+a field $\F$.  Let $S \subseteq \F$ be a finite set.  Then:
 \[
   \Pr_{r_1,\ldots,r_n \,\xleftarrow{\$}\, S}\!\left[p(r_1,\ldots,r_n) = 0\right]
   \;\leq\;
@@ -506,9 +489,9 @@ a field $\mathbb{F}$.  Let $S \subseteq \mathbb{F}$ be a finite set.  Then:
 
 \begin{remark}[Application to MLEs]
 The Schwartz--Zippel lemma is used to establish the uniqueness of the MLE (Theorem
-\ref{thm:mle}): if two multilinear polynomials agree on all of $\{0,1\}^v$, then their
-difference is a multilinear polynomial vanishing on $\{0,1\}^v$.
-Applying Schwartz--Zippel shows that, when evaluated at a random point over $\mathbb{F}_p$,
+\ref{thm:mle}): if two multilinear polynomials agree on all of $\bits^v$, then their
+difference is a multilinear polynomial vanishing on $\bits^v$.
+Applying Schwartz--Zippel shows that, when evaluated at a random point over $\Fp$,
 the probability of a nonzero multilinear polynomial vanishing is at most $v/p$, which is
 negligible for $p$ exponentially large.
 \end{remark}
@@ -522,15 +505,15 @@ This lecture covered four main topics:
 
 \begin{enumerate}[leftmargin=2em]
   \item \textbf{Multilinear Extensions (MLEs).}
-        Any function $f : \{0,1\}^v \to \mathbb{F}_p$ has a unique multilinear extension
-        $\widetilde{f} : \mathbb{F}_p^v \to \mathbb{F}_p$.  The MLE is given explicitly by
+        Any function $f : \bits^v \to \Fp$ has a unique multilinear extension
+        $\widetilde{f} : \Fp^v \to \Fp$.  The MLE is given explicitly by
         the Lagrange interpolation formula
-        $\widetilde{f}(x) = \sum_{w \in \{0,1\}^v} f(w)\,\chi_w(x)$,
+        $\widetilde{f}(x) = \sum_{w \in \bits^v} f(w)\,\chi_w(x)$,
         where $\chi_w(x) = \prod_{i=1}^v (x_i w_i + (1-x_i)(1-w_i))$.
         The factored structure of $\chi_w$ enables efficient evaluation.
 
   \item \textbf{Relations, Languages, and NP.}
-        A language $L \subseteq \{0,1\}^*$ is associated with a relation $R_L$ via
+        A language $L \subseteq \bits^*$ is associated with a relation $R_L$ via
         witnesses: $x \in L \iff \exists w : (x,w) \in R_L$.
         The class $\mathbf{NP}$ consists of languages with deterministic polynomial-time
         verifiers.

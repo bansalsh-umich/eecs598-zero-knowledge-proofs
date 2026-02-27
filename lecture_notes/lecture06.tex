@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -14,6 +12,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -23,30 +26,6 @@
 \rfoot{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
-
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-
-% Additional convenience commands
-\newcommand{\Prove}{\mathit{Prove}}
-\newcommand{\Verify}{\mathit{Verify}}
-\newcommand{\outV}{\mathsf{out}_\mathbb{V}}
-\newcommand{\viewV}{\mathsf{view}_\mathbb{V}}
 
 \tcbuselibrary{theorems, skins, breakable}
 
@@ -135,15 +114,15 @@ Given concrete $x, w$ such that $P(x, w) = 1$, use the \underline{backend} to ge
 
 The backend implements two interfaces:
 \[
-  \Verify(pp,\, P,\, C,\, E,\, x,\, \pi) \;\to\; \{0,1\}
+  \verifyproof(pp,\, P,\, C,\, E,\, x,\, \pi) \;\to\; \bits
   \qquad
-  \Prove(pp,\, P,\, C,\, E,\, x,\, w) \;\to\; \pi
+  \prove(pp,\, P,\, C,\, E,\, x,\, w) \;\to\; \pi
 \]
 
 \begin{itemize}
-  \item The program $\Prove$ first runs $E$ on $x, w$ to get $x', w'$, then runs a ZK prover to
+  \item The program $\prove$ first runs $E$ on $x, w$ to get $x', w'$, then runs a ZK prover to
         generate a proof that $C, x'$ has a corresponding $w'$.
-  \item The program $\Verify$ first uses $E$ to turn $x$ into $x'$, then verifies proof $\pi$ using
+  \item The program $\verifyproof$ first uses $E$ to turn $x$ into $x'$, then verifies proof $\pi$ using
         the ZK verifier.
 \end{itemize}
 
@@ -225,57 +204,57 @@ The overall architecture is illustrated below:
 \subsection{Definition}
 
 An \emph{interactive proof} (IP) is a protocol between two parties: a \emph{prover}
-$\mathbb{P}$ and a \emph{verifier} $\mathbb{V}$.
+$\prover$ and a \emph{verifier} $\verifier$.
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, title={Definition: Interactive Proof System}]
-  An interactive proof system for a language $L$ is a pair $\langle \mathbb{P}, \mathbb{V} \rangle$
+  An interactive proof system for a language $L$ is a pair $\langle \prover, \verifier \rangle$
   where:
   \begin{itemize}
-    \item $\mathbb{P}(x)$ runs on input $x$ and produces no private output (from $\mathbb{V}$'s
-          perspective, $\mathbb{P}$ has no output).
-    \item $\mathbb{V}(x)$ runs on input $x$ and outputs $\{0,1\}$.
-    \item A \textbf{round} is a pair of two-way ($\rightleftharpoons$) messages; $\mathbb{P}$ sends the last message in each round.
-    \item \textbf{Public coin:} $\mathbb{V}$ sends uniformly random messages (its ``challenges'').
+    \item $\prover(x)$ runs on input $x$ and produces no private output (from $\verifier$'s
+          perspective, $\prover$ has no output).
+    \item $\verifier(x)$ runs on input $x$ and outputs $\bits$.
+    \item A \textbf{round} is a pair of two-way ($\rightleftharpoons$) messages; $\prover$ sends the last message in each round.
+    \item \textbf{Public coin:} $\verifier$ sends uniformly random messages (its ``challenges'').
   \end{itemize}
 
   We write:
   \[
-    \outV[\mathbb{P}(x) \leftrightarrow \mathbb{V}(x)]
+    \mathsf{out}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]
     \qquad \text{and} \qquad
-    \viewV[\mathbb{P}(x) \leftrightarrow \mathbb{V}(x)]
+    \mathsf{view}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]
   \]
   for the verifier's output and view in the interaction.
 \end{tcolorbox}
 
 \medskip
-The notation $\mathbb{P}(x) \leftrightarrow \mathbb{V}(x)$ denotes the execution of the interactive
-protocol on public input $x$. An IP is ``for'' a language $L$: the goal is for $\mathbb{P}$ to
-convince $\mathbb{V}$ that $x \in L$.
+The notation $\prover(x) \leftrightarrow \verifier(x)$ denotes the execution of the interactive
+protocol on public input $x$. An IP is ``for'' a language $L$: the goal is for $\prover$ to
+convince $\verifier$ that $x \in L$.
 
 \subsection{Security Properties}
 
-An IP $\langle \mathbb{P}, \mathbb{V} \rangle$ for a language $L$ (with associated relation $R_L$)
+An IP $\langle \prover, \verifier \rangle$ for a language $L$ (with associated relation $R_L$)
 must satisfy the following two properties.
 
 \begin{tcolorbox}[colback=green!8, colframe=green!50!black, title={Completeness}]
   For all $(x, w) \in R_L$:
   \[
-    \Pr\!\left[\outV\!\left[\mathbb{P}(x, w) \leftrightarrow \mathbb{V}(x)\right] = 1\right] = 1.
+    \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover(x, w) \leftrightarrow \verifier(x)\right] = 1\right] = 1.
   \]
   That is, an honest prover with a valid witness always convinces the verifier.
 \end{tcolorbox}
 
 \begin{tcolorbox}[colback=red!8, colframe=red!50!black, title={$\varepsilon$-Soundness}]
-  For all $x \notin L$ and for all (potentially malicious) provers $\mathbb{P}^*$:
+  For all $x \notin L$ and for all (potentially malicious) provers $\prover^*$:
   \[
-    \Pr\!\left[\outV\!\left[\mathbb{P}^*(x) \leftrightarrow \mathbb{V}(x)\right] = 1\right] \leq \varepsilon.
+    \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover^*(x) \leftrightarrow \verifier(x)\right] = 1\right] \leq \varepsilon.
   \]
   That is, no cheating prover can convince the verifier to accept a false statement, except with
   probability at most $\varepsilon$.
 \end{tcolorbox}
 
 \begin{remark}
-  In the top-right of the slide: ``IP for $L = \langle \mathbb{P}, \mathbb{V} \rangle$''. This
+  In the top-right of the slide: ``IP for $L = \langle \prover, \verifier \rangle$''. This
   reminds us that the interactive proof system is fully specified by the pair of algorithms.
 \end{remark}
 
@@ -294,7 +273,7 @@ a verifier of the value of a sum of a multivariate polynomial evaluated over a b
   Let $g$ be an $\ell$-variate polynomial of maximal individual degree $d$ over a field $\F$.
   \medskip
 
-  \textbf{Claim:} $\displaystyle\sum_{i \in \{0,1\}^\ell} g(i) = H$.
+  \textbf{Claim:} $\displaystyle\sum_{i \in \bits^\ell} g(i) = H$.
 
   \medskip
   The prover wants to convince the verifier that the claimed value $H$ is correct.
@@ -331,7 +310,7 @@ checks a consistency condition and sends a fresh random challenge.
   % Round 1
   \node[cell, below=0pt of ph] (p1) {%
     Compute $g_1(X_1)$ as\\[4pt]
-    $\displaystyle\sum_{\substack{x_2,\ldots,x_v\\\in\{0,1\}}} g(X_1, x_2, \ldots, x_v)$
+    $\displaystyle\sum_{\substack{x_2,\ldots,x_v\\\in\bits}} g(X_1, x_2, \ldots, x_v)$
   };
   \node[cell, below=0pt of vh] (v1) {%
     Check $H = g_1(0) + g_1(1)$\\[4pt]
@@ -354,7 +333,7 @@ checks a consistency condition and sends a fresh random challenge.
 \bigskip
 \textbf{Prover:} Compute $g_j(X_j)$ as
 \[
-  \sum_{\substack{x_{j+1},\ldots,x_v \\ \in \{0,1\}}} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_v)
+  \sum_{\substack{x_{j+1},\ldots,x_v \\ \in \bits}} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_v)
 \]
 
 \textbf{Verifier:} Upon receiving $g_j$:
@@ -398,14 +377,14 @@ checks a consistency condition and sends a fresh random challenge.
     \State \textbf{Shared input:} $\ell$-variate polynomial $g$ over $\F$, claimed sum $H \in \F$
     \Statex
     \textit{// Round 1}
-    \State \textbf{Prover} computes $g_1(X_1) \gets \displaystyle\sum_{x_2,\ldots,x_\ell \in \{0,1\}} g(X_1, x_2, \ldots, x_\ell)$
+    \State \textbf{Prover} computes $g_1(X_1) \gets \displaystyle\sum_{x_2,\ldots,x_\ell \in \bits} g(X_1, x_2, \ldots, x_\ell)$
     \State \textbf{Prover} sends $g_1$ to \textbf{Verifier}
     \State \textbf{Verifier} checks $H = g_1(0) + g_1(1)$; aborts if check fails
     \State \textbf{Verifier} samples $r_1 \xleftarrow{\$} \F$ and sends $r_1$ to \textbf{Prover}
     \Statex
     \textit{// Rounds $j = 2, \ldots, \ell - 1$}
     \For{$j = 2$ \textbf{to} $\ell - 1$}
-      \State \textbf{Prover} computes $g_j(X_j) \gets \displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \{0,1\}} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
+      \State \textbf{Prover} computes $g_j(X_j) \gets \displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \bits} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
       \State \textbf{Prover} sends $g_j$ to \textbf{Verifier}
       \State \textbf{Verifier} checks $g_{j-1}(r_{j-1}) = g_j(0) + g_j(1)$; aborts if check fails
       \State \textbf{Verifier} samples $r_j \xleftarrow{\$} \F$ and sends $r_j$ to \textbf{Prover}
@@ -438,9 +417,9 @@ checks a consistency condition and sends a fresh random challenge.
   \begin{center}
   \begin{tikzpicture}[>=Stealth, thick, node distance=1.2cm and 5cm]
     \node (P) [draw, minimum height=8cm, minimum width=1.5cm, align=center, fill=blue!10]
-          {\textbf{Prover}\\ $\mathbb{P}$};
+          {\textbf{Prover}\\ $\prover$};
     \node (V) [draw, right=5cm of P, minimum height=8cm, minimum width=1.5cm, align=center, fill=red!10]
-          {\textbf{Verifier}\\ $\mathbb{V}$};
+          {\textbf{Verifier}\\ $\verifier$};
 
     % Round 1
     \draw[->] ([yshift=-1.0cm]P.north east) -- ([yshift=-1.0cm]V.north west)
@@ -482,13 +461,13 @@ probability that a cheating prover can fool the verifier into accepting a false 
 \begin{tcolorbox}[colback=yellow!10, colframe=orange!70!black, title={Theorem 1 (Soundness of Sumcheck)}]
   \begin{theorem}[Soundness of the Sumcheck Protocol]
     Let $g$ be an $\ell$-variate polynomial of maximal (individual) degree $d$ over the field $\F$.
-    Then for any malicious prover $\mathbb{P}^*$ and any value
+    Then for any malicious prover $\prover^*$ and any value
     \[
-      H \;\neq\; \sum_{i \in \{0,1\}^\ell} g(i),
+      H \;\neq\; \sum_{i \in \bits^\ell} g(i),
     \]
     we have
     \[
-      \Pr\!\left[\outV\!\left[\mathbb{P}^*(g, H) \leftrightarrow \mathbb{V}(g, H)\right] = 1\right]
+      \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover^*(g, H) \leftrightarrow \verifier(g, H)\right] = 1\right]
       \;\leq\; \frac{\ell d}{|\F|}.
     \]
   \end{theorem}
@@ -525,7 +504,7 @@ But the verifier checks $g_1(r_1) = g(r_1)$ (the final oracle check), so the che
 caught except with probability $\frac{d}{|\F|}$.
 
 \textbf{Inductive step:} For general $\ell$, either the cheating prover's first message $g_1$ is
-the correct partial sum (in which case $g_1(0) + g_1(1) = \sum_{i \in \{0,1\}^\ell} g(i) \neq H$,
+the correct partial sum (in which case $g_1(0) + g_1(1) = \sum_{i \in \bits^\ell} g(i) \neq H$,
 so the verifier's first check catches the lie immediately), or $g_1$ differs from the correct
 partial sum polynomial. In the latter case, $g_1 - g_1^*$ is a nonzero degree-$d$ univariate
 polynomial, so by Schwartz--Zippel the random challenge $r_1$ satisfies $g_1(r_1) = g_1^*(r_1)$
@@ -597,14 +576,14 @@ filled in during the lecture), we record some of the most important applications
   $\ell$ & Number of variables in the polynomial $g$ \\
   $d$ & Maximal individual degree of $g$ in any single variable \\
   $g : \F^\ell \to \F$ & The multivariate polynomial whose sum we wish to verify \\
-  $H$ & The claimed value of $\sum_{i \in \{0,1\}^\ell} g(i)$ \\
+  $H$ & The claimed value of $\sum_{i \in \bits^\ell} g(i)$ \\
   $g_j(X_j)$ & Univariate polynomial sent by prover in round $j$ \\
   $r_j$ & Random challenge field element sent by verifier in round $j$ \\
-  $\mathbb{P}$, $\mathbb{V}$ & Prover and Verifier \\
-  $\mathbb{P}^*$ & A malicious (cheating) prover \\
+  $\prover$, $\verifier$ & Prover and Verifier \\
+  $\prover^*$ & A malicious (cheating) prover \\
   $R_L$ & The NP relation associated with language $L$ \\
-  $\outV[\mathbb{P}(x) \leftrightarrow \mathbb{V}(x)]$ & Verifier's output in the interaction \\
-  $\viewV[\mathbb{P}(x) \leftrightarrow \mathbb{V}(x)]$ & Verifier's view (transcript) of the interaction \\
+  $\mathsf{out}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]$ & Verifier's output in the interaction \\
+  $\mathsf{view}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]$ & Verifier's view (transcript) of the interaction \\
   $\xleftarrow{\$}$ & Uniformly random sampling \\
   \hline
 \end{tabular}

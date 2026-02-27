@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -14,6 +12,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -24,31 +27,9 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-
-% Additional commands for this lecture
-\newcommand{\PIOP}{\mathsf{PIOP}}
-\newcommand{\IOP}{\mathsf{IOP}}
+% Lecture-specific macros
 \newcommand{\MLE}{\widetilde}
 \newcommand{\eq}{\widetilde{\mathrm{eq}}}
-\newcommand{\out}{\mathsf{out}}
-\newcommand{\SCPIOP}{\mathsf{SCPIOP}}
 
 \tcbuselibrary{theorems, skins, breakable}
 
@@ -299,11 +280,11 @@ The classical Sumcheck protocol is naturally expressed as a PIOP. Recall that
 in the Sumcheck protocol for a $v$-variate polynomial $g$ over $\F$, the prover
 wants to convince the verifier that
 \[
-  H = \sum_{x_1,\ldots,x_v \in \{0,1\}} g(x_1, \ldots, x_v).
+  H = \sum_{x_1,\ldots,x_v \in \bits} g(x_1, \ldots, x_v).
 \]
 
 In the PIOP formulation, the prover and verifier are written as
-$\mathcal{P}(g, H)$ and $\mathcal{V}^{\mathcal{O}_g}(H)$ respectively, where
+$\prover(g, H)$ and $\verifier^{\mathcal{O}_g}(H)$ respectively, where
 $\mathcal{O}_g$ denotes oracle access to $g$. The interaction proceeds as
 follows:
 
@@ -312,7 +293,7 @@ follows:
 \begin{itemize}
   \item Prover computes $g_1(X_1)$ as:
     \[
-      g_1(X_1) = \sum_{x_2, \ldots, x_v \in \{0,1\}} g(X_1, x_2, \ldots, x_v)
+      g_1(X_1) = \sum_{x_2, \ldots, x_v \in \bits} g(X_1, x_2, \ldots, x_v)
     \]
     and sends oracle $\mathcal{O}_{g_1}$ to the verifier.
   \item Verifier checks $H = \mathcal{O}_{g_1}(0) + \mathcal{O}_{g_1}(1)$ by
@@ -325,7 +306,7 @@ follows:
 \begin{itemize}
   \item Prover computes $g_j(X_j)$ as:
     \[
-      g_j(X_j) = \sum_{x_{j+1}, \ldots, x_v \in \{0,1\}}
+      g_j(X_j) = \sum_{x_{j+1}, \ldots, x_v \in \bits}
         g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_v)
     \]
     and sends oracle $\mathcal{O}_{g_j}$ to the verifier.
@@ -460,13 +441,13 @@ $z = (x \| w) \in \F^n$ be the full assignment vector. Define
   -\;
   \Bigl(\sum_j C(x,j)\, z(j)\Bigr),
 \]
-where we view $x$ as a binary index in $\{0,1\}^{\log n}$, and $A(x,j),
+where we view $x$ as a binary index in $\bits^{\log n}$, and $A(x,j),
 B(x,j), C(x,j)$ are the entries of the matrices accessed via their
 multilinear extensions.
 
-This function $f_{\mathrm{res}}$ maps $\{0,1\}^{\log n} \to \F$, and:
+This function $f_{\mathrm{res}}$ maps $\bits^{\log n} \to \F$, and:
 \[
-  f_{\mathrm{res}} \text{ is zero on } \{0,1\}^{\log n}
+  f_{\mathrm{res}} \text{ is zero on } \bits^{\log n}
   \quad\iff\quad
   z \text{ satisfies } Az \circ Bz = Cz.
 \]
@@ -489,11 +470,11 @@ oracle. Define the ``extended'' residual polynomial as:
 where $g_{\mathrm{res}}: \F^{\log n} \to \F$ is a polynomial over the full
 field extension. Crucially:
 \[
-  g_{\mathrm{res}}(x) = f_{\mathrm{res}}(x) \quad \text{for all } x \in \{0,1\}^{\log n}.
+  g_{\mathrm{res}}(x) = f_{\mathrm{res}}(x) \quad \text{for all } x \in \bits^{\log n}.
 \]
 
 So checking that $z$ satisfies R1CS is equivalent to checking that
-$g_{\mathrm{res}}$ is identically zero on the hypercube $\{0,1\}^{\log n}$.
+$g_{\mathrm{res}}$ is identically zero on the hypercube $\bits^{\log n}$.
 
 \subsection{Reduction via the Equality Polynomial}
 
@@ -503,14 +484,14 @@ To check that $g_{\mathrm{res}}$ is zero on the entire hypercube, we use the
   \widetilde{\mathrm{eq}}(\tau, x) \;=\; \prod_{i=1}^{\log n}
     \bigl(\tau_i x_i + (1 - \tau_i)(1 - x_i)\bigr),
 \]
-which equals 1 if $\tau = x$ and 0 otherwise, for $\tau, x \in \{0,1\}^{\log n}$.
+which equals 1 if $\tau = x$ and 0 otherwise, for $\tau, x \in \bits^{\log n}$.
 
 \begin{theorem}[Key Reduction]
   Let $\tau \leftarrow \$\; \F^{\log n}$ be a random vector. If
-  $g_{\mathrm{res}}(x) \neq 0$ for some $x \in \{0,1\}^{\log n}$, then:
+  $g_{\mathrm{res}}(x) \neq 0$ for some $x \in \bits^{\log n}$, then:
   \[
     \Pr_{\tau \leftarrow \F^{\log n}}\!\left[
-      \sum_{x \in \{0,1\}^{\log n}} \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x) = 0
+      \sum_{x \in \bits^{\log n}} \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x) = 0
     \right] \;\leq\; \frac{n}{|\F|}.
   \]
   In other words, with high probability over $\tau$, the sum
@@ -535,16 +516,16 @@ sumcheck.
 \caption{Delphian PIOP -- First Phase}
 \begin{algorithmic}[1]
 \Statex \hspace{-\algorithmicindent}
-  $\mathcal{P}(A, B, C, x, w)$
+  $\prover(A, B, C, x, w)$
   \hfill
-  $\mathcal{V}(A, B, C, x)$
+  $\verifier(A, B, C, x)$
 \Statex \hrulefill
 
 \State \textbf{Prover:} Compute multilinear extension $\tilde{w}$ of $w$.
 \State \textbf{Prover} $\to$ \textbf{Verifier:} Send oracle $\mathcal{O}_{\tilde{w}}$.
 
 \Statex
-\State \textbf{Verifier:} Sample $\tau \leftarrow \$ \; \F^{\log n}$; send $\tau$ to prover.
+\State \textbf{Verifier:} Sample $\tau \getsr \F^{\log n}$; send $\tau$ to prover.
 
 \Statex
 \State \textbf{Both:} Define $h(x) = \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x)$.
@@ -555,7 +536,7 @@ sumcheck.
 \Statex
 \State \textbf{Both:} Run sumcheck subprotocol on $h$ with claimed sum 0:
   \[
-    \mathsf{SCPIOP}\!\left[\mathcal{P}_{sc}(h, 0) \leftrightarrow \mathcal{V}_{sc}^{\mathcal{O}_h}(0)\right]
+    \SCPIOP\!\left[\prover_{sc}(h, 0) \leftrightarrow \verifier_{sc}^{\mathcal{O}_h}(0)\right]
   \]
 \State \textbf{Verifier} $\to$ \textbf{Prover:} Sumcheck outputs $(r' = (r'_1, \ldots, r'_{\log n}),\, H')$.
 
@@ -573,7 +554,7 @@ sumcheck.
 \For{$M \in \{A, B, C\}$}
   \State \textbf{Prover:} Define $p_M(x) = \tilde{f}_M(r', x)\, \tilde{z}(x)$,
     where $\tilde{f}_M(r', x) = \tilde{M}(r', x)$.
-  \State \textbf{Prover:} Compute $v_M = \sum_{x \in \{0,1\}^{\log n}} p_M(x)$.
+  \State \textbf{Prover:} Compute $v_M = \sum_{x \in \bits^{\log n}} p_M(x)$.
 \EndFor
 
 \State \textbf{Prover} $\to$ \textbf{Verifier:} Send $v_A, v_B, v_C, \mathcal{O}_{p_A}, \mathcal{O}_{p_B}, \mathcal{O}_{p_C}$.
@@ -604,22 +585,22 @@ using another sumcheck. The key identity used is:
 \]
 
 Recall: $p_M(x) = \tilde{f}_M(r', x)\, \tilde{z}(x)$, so the claimed sum is
-$v_M = \sum_{x \in \{0,1\}^{\log n}} p_M(x)$.
+$v_M = \sum_{x \in \bits^{\log n}} p_M(x)$.
 
 \begin{algorithm}[H]
 \caption{Delphian PIOP -- Second Phase (for each $M \in \{A, B, C\}$)}
 \begin{algorithmic}[1]
 \Statex \hspace{-\algorithmicindent}
-  $\mathcal{P}(A, B, C, x, w)$
+  $\prover(A, B, C, x, w)$
   \hfill
-  $\mathcal{V}(A, B, C, x)$
+  $\verifier(A, B, C, x)$
 \Statex \hrulefill
 
 \For{$M \in \{A, B, C\}$}
   \State \textbf{Both:} Run sumcheck on $p_M$ with claimed sum $v_M$:
     \[
-      \mathsf{SCPIOP}\!\left[\mathcal{P}_{sc}(p_M, v_M) \leftrightarrow
-        \mathcal{V}_{sc}^{\mathcal{O}_{p_M}}(v_M)\right]
+      \SCPIOP\!\left[\prover_{sc}(p_M, v_M) \leftrightarrow
+        \verifier_{sc}^{\mathcal{O}_{p_M}}(v_M)\right]
     \]
   \State \textbf{Verifier} $\to$ \textbf{Prover:}
     Sumcheck outputs $r''_M = (r''_{M,1}, \ldots, r''_{M,\log n}),\, H''$.
@@ -713,8 +694,8 @@ The soundness proof proceeds by a sequence of reductions:
 
 \begin{enumerate}
   \item \textbf{If $x \notin \mathcal{L}_{A,B,C}$:} then $f_{\mathrm{res}}$
-    is not identically zero on $\{0,1\}^{\log n}$, i.e., there exists some
-    $\hat{x} \in \{0,1\}^{\log n}$ with $f_{\mathrm{res}}(\hat{x}) \neq 0$.
+    is not identically zero on $\bits^{\log n}$, i.e., there exists some
+    $\hat{x} \in \bits^{\log n}$ with $f_{\mathrm{res}}(\hat{x}) \neq 0$.
 
   \item \textbf{Randomization by $\tau$:} With probability at least
     $1 - n/|\F|$ over the choice of $\tau$, the sum

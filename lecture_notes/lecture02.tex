@@ -11,16 +11,19 @@
 
 %----------------------- Packages -----------------------
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 %----------------------- Page style -----------------------
 \pagestyle{fancy}
@@ -32,27 +35,10 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-%----------------------- Theorem environments -----------------------
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-
 %----------------------- Macros -----------------------
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
 % \gcd is already defined; \lcm and \ord are not
-\DeclareMathOperator{\lcm}{lcm}
-\DeclareMathOperator{\ord}{ord}
-\newcommand{\Fp}{\mathbb{F}_p}
+
+
 
 %=============================================================
 \begin{document}
@@ -72,7 +58,7 @@
 \medskip
 
 %----------------------- Agenda -----------------------
-\paragraph{Agenda.}
+\paragraph{Agenda}
 \begin{enumerate}[label=(\arabic*)]
   \item Announcements
   \item Overview of multiprecision arithmetic
@@ -86,14 +72,14 @@
 \medskip
 
 %----------------------- Announcements -----------------------
-\paragraph{Announcements.}
+\paragraph{Announcements}
 \begin{itemize}
   \item Project 1 is online---start if you haven't yet!
   \item The autograder is working.
   \item 598 students: please stay behind at the end of class.
 \end{itemize}
 
-\paragraph{Background reading.}
+\paragraph{Background reading}
 The material in this lecture corresponds to modern cryptographic
 foundations.  For further background, see Chapters 1--4 of Shoup,
 \emph{A Computational Introduction to Number Theory and Algebra}.
@@ -198,7 +184,7 @@ coefficients $(x, y)$.
 \end{algorithmic}
 \end{algorithm}
 
-\paragraph{Correctness.}
+\paragraph{Correctness}
 We verify by induction that the algorithm returns correct B\'ezout
 coefficients.
 
@@ -252,7 +238,7 @@ coefficients.
   $-13 \equiv 7 \pmod{20}$ since $20 \mid (-13 - 7)$.
 \end{example}
 
-\paragraph{Arithmetic properties.}  Congruences are compatible with
+\paragraph{Arithmetic properties}  Congruences are compatible with
 addition and multiplication: if $a \equiv c \pmod{p}$ and
 $b \equiv d \pmod{p}$, then
 \[
@@ -300,7 +286,7 @@ $\gcd(a, p) = 1$ and therefore has a multiplicative inverse modulo $p$.
   $\ord_p(a) \mid (p-1)$.
 \end{fact}
 
-\paragraph{Arithmetic mod $p$ ``just works.''}
+\paragraph{Arithmetic mod $p$ ``just works''}
 When $p$ is prime, arithmetic modulo $p$ satisfies all the familiar
 field axioms: commutativity, associativity, and distributivity of $+$
 and $\times$; additive and multiplicative identities $0$ and $1$;
@@ -360,7 +346,7 @@ bit-shifts, replacing expensive divisions with cheaper reductions.
   is the smallest such positive integer (i.e., $\ord_p(\omega) = k$).
 \end{definition}
 
-\paragraph{Application: FFT over finite fields.}
+\paragraph{Application: FFT over finite fields}
 If $p - 1$ is divisible by a large power of $2$, say $2^s \mid (p-1)$,
 then $\Fp$ contains a primitive $2^s$-th root of unity.  This enables
 the \emph{Number-Theoretic Transform} (NTT), a variant of the Fast

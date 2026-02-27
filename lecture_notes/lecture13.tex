@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -14,6 +12,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -24,39 +27,7 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-
-% Additional convenience macros
-\newcommand{\PP}{\mathcal{P}}
-\newcommand{\VV}{\mathcal{V}}
-\newcommand{\LL}{\mathcal{L}}
-\newcommand{\CC}{\mathcal{C}}
-\newcommand{\Sim}{\mathcal{S}}
-\newcommand{\pp}{\mathsf{pp}}
-\newcommand{\verify}{\mathsf{verify}}
-\newcommand{\Setup}{\mathsf{Setup}}
-\newcommand{\msm}{\mathsf{msm}}
-\newcommand{\CfCom}{\mathsf{CfCom}}
-\newcommand{\EqProof}{\mathsf{EqProof}}
-\newcommand{\PCOpen}{\mathsf{PC.Open}}
-\newcommand{\NIZK}{\mathsf{NIZK}}
-\newcommand{\getsr}{\xleftarrow{\$}}
+% Lecture-specific macros
 
 \tcbuselibrary{theorems, skins, breakable}
 
@@ -132,26 +103,26 @@ important specialisation of HVZK for sigma protocols is called
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
                   title={Definition: Special Honest-Verifier Zero-Knowledge}]
-A sigma protocol $\mathsf{IP} = \langle \PP, \VV \rangle$ (with
-verification function $\verify$) for language $\LL$ is
+A sigma protocol $\mathsf{IP} = \langle \prover, \verifier \rangle$ (with
+verification function $\verifyproof$) for language $\lang$ is
 \textbf{special honest-verifier zero-knowledge} if there exists a
 probabilistic polynomial-time simulator $\Sim$ that takes parameters
-$\pp$, input $x$, and challenge $c \in \CC$, and satisfies:
+$\pp$, input $x$, and challenge $c \in \calC$, and satisfies:
 
 \begin{enumerate}
   \item For $\pp \getsr \Setup$ and all pairs $x, c$, the output of
         $\Sim(\pp, x, c)$ is a proof $\pi = (R, c, z)$ such that
         \[
-          \verify(\pp,\, x,\, R,\, c,\, z) = 1.
+          \verifyproof(\pp,\, x,\, R,\, c,\, z) = 1.
         \]
 
-  \item For all $(x, w) \in \mathcal{R}_{\LL}$, the transcript $(R, c, z)$
+  \item For all $(x, w) \in \mathcal{R}_{\lang}$, the transcript $(R, c, z)$
         computed as
         \[
-          c \getsr \CC\,;\quad R,\, z \getsr \Sim(x,\, c)
+          c \getsr \calC\,;\quad R,\, z \getsr \Sim(x,\, c)
         \]
         is \emph{identically distributed} to a real transcript of the
-        interaction $[\PP(\pp, x, w) \leftrightarrow \VV(\pp, x)]$.
+        interaction $[\prover(\pp, x, w) \leftrightarrow \verifier(\pp, x)]$.
 \end{enumerate}
 \end{tcolorbox}
 
@@ -208,10 +179,10 @@ holds with probability 1.
 
 \noindent\textbf{Distribution.}  We must show that the joint distribution
 \[
-  \bigl[c \getsr \CC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
+  \bigl[c \getsr \calC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
 \]
 is identically distributed to a real transcript
-$[\PP(X, x) \leftrightarrow \VV(X)]$.
+$[\prover(X, x) \leftrightarrow \verifier(X)]$.
 
 In a real transcript:
 \begin{itemize}
@@ -234,9 +205,9 @@ Both distributions produce a uniformly random pair $(c, z) \in
 \mathbb{Z}_p^2$ together with $R = zG - cX$.  They are therefore
 identically distributed, confirming:
 \[
-  \bigl[c \getsr \CC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
+  \bigl[c \getsr \calC\,;\; R, z \getsr \Sim(\mathbb{G}, G, p, X, c)\bigr]
   \;\approx\;
-  \bigl[\PP(X, x) \leftrightarrow \VV(X)\bigr].
+  \bigl[\prover(X, x) \leftrightarrow \verifier(X)\bigr].
 \]
 \end{proof}
 
@@ -252,11 +223,11 @@ sumcheck protocol and identify what information it leaks.
 
 \medskip
 \noindent The plain sumcheck protocol for the claim
-$\sum_{x_1,\ldots,x_v \in \{0,1\}} g(x_1,\ldots,x_v) = H$
+$\sum_{x_1,\ldots,x_v \in \bits} g(x_1,\ldots,x_v) = H$
 (where $g$ is a multilinear polynomial over $\mathbb{F}$) proceeds as
 follows.
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
   node distance=2cm,
@@ -269,7 +240,7 @@ follows.
   % Round 1
   \node (p1) [below=0.6cm of P, align=left] {%
     Compute $g_1(X_1)$ as\\
-    $\displaystyle\sum_{x_2,\ldots,x_v \in \{0,1\}} g(X_1, x_2, \ldots, x_v)$
+    $\displaystyle\sum_{x_2,\ldots,x_v \in \bits} g(X_1, x_2, \ldots, x_v)$
   };
   \draw[arr] ($(p1.east)+(0,0.1)$) -- node[above]{$g_1$} ($(V.south west)+(0,-0.9)$);
 
@@ -285,7 +256,7 @@ follows.
   % Round j
   \node (pj) [below=3.8cm of P, align=left] {%
     Compute $g_j(X_j)$ as\\
-    $\displaystyle\sum_{x_{j+1},\ldots,x_v \in \{0,1\}} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$
+    $\displaystyle\sum_{x_{j+1},\ldots,x_v \in \bits} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$
   };
   \draw[arr] ($(pj.east)+(0,0.1)$) -- node[above]{$g_j$} ($(V.south west)+(0,-3.7)$);
 
@@ -397,7 +368,7 @@ $a_i G + r_i H$):
   \item A commitment $C_v$ to the claimed sum $v = H$.
 \end{itemize}
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
   node distance=1.5cm,
@@ -405,10 +376,10 @@ $a_i G + r_i H$):
   arr/.style={-{Stealth}, thick}
 ]
   \node (PL) [align=left] {%
-    \textbf{ZKSumcheck.}\(\PP(\pp, C_g, C_v,\; g,\, V,\, d_{g_1}, \Gamma_v)\)
+    \textbf{ZKSumcheck.}\(\prover(\pp, C_g, C_v,\; g,\, V,\, d_{g_1}, \Gamma_v)\)
   };
   \node (VL) [right=6.5cm of PL, align=left] {%
-    \textbf{ZKSumcheck.}\(\VV(\pp, C_g, C_v)\)
+    \textbf{ZKSumcheck.}\(\verifier(\pp, C_g, C_v)\)
   };
 
   \draw[thick] ($(PL.south west)$) -- ($(PL.south east)+(3,0)$);
@@ -417,7 +388,7 @@ $a_i G + r_i H$):
   % Prover action
   \node (pa) [below=0.7cm of PL, align=left] {%
     Compute $g_1(X_1)$ as\\[2pt]
-    $\displaystyle\sum_{x_2,\ldots,x_v\in\{0,1\}} g(X_1,x_2,\ldots,x_v)$\\[4pt]
+    $\displaystyle\sum_{x_2,\ldots,x_v\in\bits} g(X_1,x_2,\ldots,x_v)$\\[4pt]
     $C_{g_1} \getsr \CfCom(g_1)$
   };
 
@@ -464,7 +435,7 @@ the committed claimed value $C_v$.}
 
 \subsection{ZK-Sumcheck Protocol: Round \texorpdfstring{$j$}{j} (General)}
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
   node distance=1.2cm,
@@ -476,7 +447,7 @@ the committed claimed value $C_v$.}
   % Prover action
   \node (pa) [below=0.5cm of lbl, align=left] {%
     Compute $g_j(X_j)$ as\\[2pt]
-    $\displaystyle\sum_{x_{j+1},\ldots,x_v\in\{0,1\}} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$\\[4pt]
+    $\displaystyle\sum_{x_{j+1},\ldots,x_v\in\bits} g(r_1,\ldots,r_{j-1},X_j,x_{j+1},\ldots,x_v)$\\[4pt]
     $C_{g_j} \leftarrow \CfCom(g_j)$
   };
   \node (VL) [right=6.5cm of pa] {};
@@ -524,7 +495,7 @@ the committed claimed value $C_v$.}
 
 \subsection{ZK-Sumcheck Protocol: Final Round}
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
   node distance=1.2cm,
@@ -623,20 +594,20 @@ random challenges with outputs of a cryptographic hash function
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
                   title={Fiat-Shamir Transform}]
-Let $\mathsf{IP} = \langle \Setup, \PP, \VV \rangle$ be an interactive
+Let $\mathsf{IP} = \langle \Setup, \prover, \verifier \rangle$ be an interactive
 argument.  The \textbf{Fiat-Shamir transform} with random oracle
-$\mathbf{F}$ produces a non-interactive argument
+$\RO$ produces a non-interactive argument
 \[
-  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\PP^{\mathbf{F}},\;
-  \mathsf{FS[IP]}.\VV^{\mathbf{F}}\bigr),
+  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\prover^{\RO},\;
+  \mathsf{FS[IP]}.\verifier^{\RO}\bigr),
 \]
 where:
 \begin{itemize}
-  \item The prover $\mathsf{FS[IP]}.\PP^{\mathbf{F}}$ runs the
+  \item The prover $\mathsf{FS[IP]}.\prover^{\RO}$ runs the
         interactive prover but replaces each verifier challenge with
-        $c_i = \mathbf{F}(\text{transcript so far})$.
-  \item The verifier $\mathsf{FS[IP]}.\VV^{\mathbf{F}}$ recomputes
-        all challenges using $\mathbf{F}$ and checks the proof.
+        $c_i = \RO(\text{transcript so far})$.
+  \item The verifier $\mathsf{FS[IP]}.\verifier^{\RO}$ recomputes
+        all challenges using $\RO$ and checks the proof.
 \end{itemize}
 The resulting proof $\pi$ is a static object (a string) that any
 verifier can check without interaction.
@@ -645,21 +616,21 @@ verifier can check without interaction.
 \subsection{``Fiat-Shamir Preserves ZK''}
 
 \begin{theorem}[\textbf{FS Preserves ZK}]
-Let $\mathsf{IP} = \langle \Setup, \PP, \VV \rangle$ be an interactive
-argument for language $\LL$.  Let
+Let $\mathsf{IP} = \langle \Setup, \prover, \verifier \rangle$ be an interactive
+argument for language $\lang$.  Let
 \[
-  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\PP^{\mathbf{F}},\;
-  \mathsf{FS[IP]}.\VV^{\mathbf{F}}\bigr)
+  \mathsf{FS[IP]} = \bigl(\Setup,\; \mathsf{FS[IP]}.\prover^{\RO},\;
+  \mathsf{FS[IP]}.\verifier^{\RO}\bigr)
 \]
 be the non-interactive argument obtained from applying the Fiat-Shamir
-transform with random oracle $\mathbf{F}$ to $\mathsf{IP}$.  If
+transform with random oracle $\RO$ to $\mathsf{IP}$.  If
 $\mathsf{IP}$ is \emph{special honest-verifier zero-knowledge} and
 has \emph{unpredictable commitments}, then $\mathsf{FS[IP]}$ is a
 \textbf{non-interactive zero-knowledge argument}.
 \end{theorem}
 
 \begin{proof}[Proof (sketch)]
-We need to construct a simulator $\Sim^{\mathbf{F}}$ for
+We need to construct a simulator $\Sim^{\RO}$ for
 $\mathsf{FS[IP]}$ that, given only the statement $x$, produces a
 simulated proof $\pi$ that is indistinguishable from a real proof, in
 the random oracle model.
@@ -668,13 +639,13 @@ The simulator proceeds as follows (exploiting programmability of the
 random oracle):
 
 \begin{algorithm}[H]
-\caption{NIZK Simulator $\Sim^{\mathbf{F}}(x)$}
+\caption{NIZK Simulator $\Sim^{\RO}(x)$}
 \begin{algorithmic}[1]
   \State // We simulate the NIZK proof for statement $x$
-  \State // Key idea: we can \emph{program} the random oracle $\mathbf{F}$
-  \State Pick a random challenge $c \getsr \CC$
+  \State // Key idea: we can \emph{program} the random oracle $\RO$
+  \State Pick a random challenge $c \getsr \calC$
   \State Run the HVZK simulator: $(R, z) \getsr \Sim_{\mathsf{IP}}(x, c)$
-  \State Program the random oracle: set $\mathbf{F}(R) := c$
+  \State Program the random oracle: set $\RO(R) := c$
   \State \Return $\pi = (R, c, z)$
 \end{algorithmic}
 \end{algorithm}
@@ -685,19 +656,19 @@ random oracle):
         transcript $(R, c, z)$ that is identically distributed to a
         real transcript (by special HVZK), where $c$ is chosen before
         $R$ is generated.
-  \item In the non-interactive setting, $c = \mathbf{F}(R)$; since the
+  \item In the non-interactive setting, $c = \RO(R)$; since the
         simulator can program the random oracle, it sets
-        $\mathbf{F}(R) = c$.
+        $\RO(R) = c$.
   \item The \emph{unpredictable commitments} property ensures that $R$
-        was not previously queried to $\mathbf{F}$ by the adversary
+        was not previously queried to $\RO$ by the adversary
         (with overwhelming probability), so there is no conflict in
-        programming $\mathbf{F}(R) = c$.
+        programming $\RO(R) = c$.
   \item The resulting simulated proof $\pi = (R, c, z)$ is
         indistinguishable from a real proof:
         \begin{align*}
-          &\text{Real proof: } \PP(x, w) \text{ with } c = \mathbf{F}(R) \\
+          &\text{Real proof: } \prover(x, w) \text{ with } c = \RO(R) \\
           &\text{Simulated proof: } \Sim_{\mathsf{IP}}(x, c),\
-            \mathbf{F}(R) := c.
+            \RO(R) := c.
         \end{align*}
 \end{itemize}
 
@@ -714,14 +685,14 @@ random oracle):
   \node (R) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm] {$R$};
   \node (c) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm, below=0.8cm of R] {$c$};
   \node (z) [draw, rounded corners, minimum width=1.5cm, minimum height=0.8cm, below=0.8cm of c] {$z$};
-  \draw[arr] (R) -- (c) node[midway, right] {$c = \mathbf{F}(R)$};
+  \draw[arr] (R) -- (c) node[midway, right] {$c = \RO(R)$};
   \draw[arr] (c) -- (z);
   \node[left=0.3cm of R] {Prover sends:};
 \end{tikzpicture}
 \end{center}
 
 \noindent The simulator picks $c$ first, generates $(R,z)$ via
-$\Sim_{\mathsf{IP}}$, and programs $\mathbf{F}(R)=c$ to make the
+$\Sim_{\mathsf{IP}}$, and programs $\RO(R)=c$ to make the
 hash consistent.  This is valid because:
 \begin{itemize}
   \item The HVZK distribution is the same whether $c$ is chosen before

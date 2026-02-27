@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -14,6 +12,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -23,35 +26,6 @@
 \rfoot{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
-
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-
-% Additional convenience macros
-\newcommand{\PP}{\mathcal{P}}
-\newcommand{\VV}{\mathcal{V}}
-\newcommand{\comm}{\mathsf{Com}}
-\newcommand{\setup}{\mathsf{Setup}}
-\newcommand{\open}{\mathsf{Open}}
-\newcommand{\verify}{\mathsf{Verify}}
-\newcommand{\pp}{\mathsf{pp}}
-
-\DeclareMathOperator{\ord}{ord}
-\DeclareMathOperator{\dg}{deg}
 
 \tcbuselibrary{theorems, skins, breakable}
 
@@ -128,7 +102,7 @@
 
 Recall from the previous lecture that the \emph{sumcheck protocol} allows a prover to convince a verifier that
 \[
-  H = \sum_{i \in \{0,1\}^\ell} g(i),
+  H = \sum_{i \in \bits^\ell} g(i),
 \]
 where $g$ is an $\ell$-variate polynomial of maximal individual degree $d$ over a field $\F$.  In this section we prove the soundness of that protocol.
 
@@ -136,9 +110,9 @@ where $g$ is an $\ell$-variate polynomial of maximal individual degree $d$ over 
                   title={Theorem (Soundness of Sumcheck)}]
 \textbf{Theorem 1.}
 \textit{Let $g$ be an $\ell$-variate polynomial of maximal degree $d$ over the field $\F$.
-Then for any malicious prover $\PP^*$ and value $H \neq \sum_{i \in \{0,1\}^\ell} g(i)$,}
+Then for any malicious prover $\prover^*$ and value $H \neq \sum_{i \in \bits^\ell} g(i)$,}
 \[
-  \Pr\!\left[\mathsf{out}_\VV\bigl[\PP^*(g, H) \leftrightarrow \VV(g, H)\bigr] = 1\right]
+  \Pr\!\left[\mathsf{out}_\verifier\bigl[\prover^*(g, H) \leftrightarrow \verifier(g, H)\bigr] = 1\right]
   \;\le\;
   \frac{\ell d}{|\F|}.
 \]
@@ -150,14 +124,14 @@ We prove the theorem by induction on the number of rounds $\ell$.
 
 \begin{proofbox}[Proof sketch (by induction on $\ell$)]
 
-\textbf{Setup.}  The malicious prover $\PP^*$ sends a univariate polynomial $g_1$ to the verifier, and claims
+\textbf{Setup.}  The malicious prover $\prover^*$ sends a univariate polynomial $g_1$ to the verifier, and claims
 \[
   g_1^*(0) + g_1^*(1) = H.
 \]
 The verifier checks this claim and then samples $r_1 \xleftarrow{\$} \Fp$.
 
 \medskip
-\textbf{Key observation.}  Either the polynomial $g_1^*$ sent by $\PP^*$ differs from the honest $g_1$, or it is equal to the honest $g_1$.
+\textbf{Key observation.}  Either the polynomial $g_1^*$ sent by $\prover^*$ differs from the honest $g_1$, or it is equal to the honest $g_1$.
 
 \begin{itemize}
   \item If $g_1^* \neq g_1$ (the honest round-1 polynomial), then the two univariate polynomials of degree $\le d$ agree on at most $d$ points.  Hence
@@ -166,9 +140,9 @@ The verifier checks this claim and then samples $r_1 \xleftarrow{\$} \Fp$.
   \]
   In this case, the verifier is fooled with probability at most $d/|\F|$.
 
-  \item If $g_1^* = g_1$ (same polynomial), then since $H \neq \sum_{i\in\{0,1\}^\ell} g(i)$ but $g_1^*(0)+g_1^*(1) = H$, it follows that the sum $g_1^*(0)+g_1^*(1) \neq$ the true sum.  But $g_1 = g_1^*$ means the prover is still cheating ``downstream'': the reduced claim
+  \item If $g_1^* = g_1$ (same polynomial), then since $H \neq \sum_{i\in\bits^\ell} g(i)$ but $g_1^*(0)+g_1^*(1) = H$, it follows that the sum $g_1^*(0)+g_1^*(1) \neq$ the true sum.  But $g_1 = g_1^*$ means the prover is still cheating ``downstream'': the reduced claim
   \[
-    g_1(r_1) = \sum_{x_2,\ldots,x_\ell \in \{0,1\}} g(r_1, x_2, \ldots, x_\ell)
+    g_1(r_1) = \sum_{x_2,\ldots,x_\ell \in \bits} g(r_1, x_2, \ldots, x_\ell)
   \]
   cannot both be consistent with the first-round polynomial \emph{and} be the true value.  By the induction hypothesis applied to the remaining $(\ell - 1)$ rounds, the probability of the verifier being fooled is at most $(\ell-1)d/|\F|$.
 \end{itemize}
@@ -217,14 +191,14 @@ Intuitively, a commitment scheme is like a \textbf{lockbox}: the committer puts 
 A \textbf{commitment scheme} consists of three algorithms:
 \begin{itemize}
   \item $\setup(1^\lambda) \to \pp$ --- generates public parameters.
-  \item $\comm(\pp, x) \xrightarrow{\$} C$ --- commits to message $x$; often written with explicit randomness as $\comm(\pp, x; r)$ where $r \xleftarrow{\$} \mathcal{R}$.
-  \item $\open(\pp, C, x, r) \to \{0,1\}$ --- outputs 1 if $C$ is a valid commitment to $x$ with opening $r$, and 0 otherwise.
+  \item $\commit(\pp, x) \xrightarrow{\$} C$ --- commits to message $x$; often written with explicit randomness as $\commit(\pp, x; r)$ where $r \xleftarrow{\$} \mathcal{R}$.
+  \item $\open(\pp, C, x, r) \to \bits$ --- outputs 1 if $C$ is a valid commitment to $x$ with opening $r$, and 0 otherwise.
 \end{itemize}
 \end{definitionbox}
 
 \subsubsection{Security Notions for Regular Commitments}
 
-\paragraph{Computationally Hiding ($\mathsf{ComHide}_b$).}
+\paragraph{Computationally Hiding ($\mathsf{ComHide}_b$)}
 The hiding game proceeds as follows:
 
 \begin{algorithm}
@@ -232,14 +206,14 @@ The hiding game proceeds as follows:
 \begin{algorithmic}[1]
   \State $\pp \xleftarrow{\$} \setup$
   \State $m_0, m_1 \xleftarrow{\$} \mathcal{A}(\pp)$
-  \State $C_b \xleftarrow{\$} \comm(\pp, m_b)$
+  \State $C_b \xleftarrow{\$} \commit(\pp, m_b)$
   \State $b' \xleftarrow{\$} \mathcal{A}(\pp, C_b)$
 \end{algorithmic}
 \end{algorithm}
 
 \noindent The scheme is \emph{computationally hiding} if no PPT adversary $\mathcal{A}$ can distinguish $b' = b$ with non-negligible advantage.
 
-\paragraph{Computationally Binding ($\mathsf{ComBind}(\mathcal{A})$).}
+\paragraph{Computationally Binding ($\mathsf{ComBind}(\mathcal{A})$)}
 The binding game proceeds as follows:
 
 \begin{algorithm}
@@ -262,7 +236,7 @@ A classical and widely used commitment scheme is the \textbf{Pedersen commitment
 \textbf{Setup:} Sample $G, H \xleftarrow{\$} \mathbb{G}$ uniformly at random.  Set $\pp = (G, H)$.
 
 \medskip
-\textbf{Commit:} $\comm(\pp = (G,H),\; x \in \Z_p)$:
+\textbf{Commit:} $\commit(\pp = (G,H),\; x \in \Z_p)$:
 \begin{enumerate}
   \item Sample $r \xleftarrow{\$} \Z_p$.
   \item Return $C := xG + rH$.
@@ -285,9 +259,9 @@ The Pedersen commitment extends naturally to \textbf{vectors of messages}.  Choo
 \]
 
 \begin{remark}[Additive Homomorphism]
-Pedersen commitments (and vector Pedersen commitments) are \textbf{additively homomorphic}: given commitments $C_0 = \comm(\pp, x_0; r_0)$ and $C_1 = \comm(\pp, x_1; r_1)$, we have
+Pedersen commitments (and vector Pedersen commitments) are \textbf{additively homomorphic}: given commitments $C_0 = \commit(\pp, x_0; r_0)$ and $C_1 = \commit(\pp, x_1; r_1)$, we have
 \[
-  C_0 + C_1 = \comm(\pp, x_0 + x_1;\; r_0 + r_1).
+  C_0 + C_1 = \commit(\pp, x_0 + x_1;\; r_0 + r_1).
 \]
 This property is crucial for many ZKP constructions.
 \end{remark}
@@ -300,22 +274,22 @@ A \textbf{polynomial commitment} (PC) scheme allows a prover to commit to a poly
 A \textbf{polynomial commitment scheme} consists of four algorithms:
 \begin{itemize}
   \item $\setup(n) \to \pp$ \quad --- generates public parameters encoding a \emph{degree bound} $n$ (the committed polynomial must have degree $\le n$).
-  \item $\comm(\pp, P) \to (C_P,\, r)$ \quad --- commits to polynomial $P$, outputting a commitment $C_P$ and an \emph{opening hint} $r$.
+  \item $\commit(\pp, P) \to (C_P,\, r)$ \quad --- commits to polynomial $P$, outputting a commitment $C_P$ and an \emph{opening hint} $r$.
   \item $\open(\pp, C_P, P, z, r) \to (\pi, v)$ \quad --- given a point $z$, outputs a proof $\pi$ and a claimed value $v$ such that $P(z) = v$.  In the \emph{interactive} syntax:
     \[
-      \open\bigl[\PP(\pp, C_P, P, z, r) \leftrightarrow \VV(\pp, C_P, z)\bigr]
+      \open\bigl[\prover(\pp, C_P, P, z, r) \leftrightarrow \verifier(\pp, C_P, z)\bigr]
     \]
-    where $\VV$ outputs 0 or 1.
-  \item $\verify(\pp, C_P, z, v, \pi) \to \{0, 1\}$ \quad --- verifies that $P(z) = v$ given the commitment $C_P$ and proof $\pi$.  $\VV$ outputs 0 or 1.
+    where $\verifier$ outputs 0 or 1.
+  \item $\verifyproof(\pp, C_P, z, v, \pi) \to \bits$ \quad --- verifies that $P(z) = v$ given the commitment $C_P$ and proof $\pi$.  $\verifier$ outputs 0 or 1.
 \end{itemize}
 \end{definitionbox}
 
 \begin{remark}
 In the interactive syntax, the open protocol is an interactive proof:
 \[
-  \open\bigl[\PP(\pp, C_P, P, z, r) \leftrightarrow \VV(\pp, C_P, z)\bigr]
+  \open\bigl[\prover(\pp, C_P, P, z, r) \leftrightarrow \verifier(\pp, C_P, z)\bigr]
 \]
-where the verifier $\VV$ outputs 0 or 1.
+where the verifier $\verifier$ outputs 0 or 1.
 \end{remark}
 
 \subsection{PC Security: Evaluation Binding}
@@ -326,7 +300,7 @@ The central security notion for polynomial commitments is \emph{evaluation bindi
 Define the relation
 \[
   \mathcal{R}_{\mathrm{PC}} \;=\; \bigl\{\, (\pp, C_P, z, v, n \;;\; P, r) \;:\;
-    C_P \leftarrow \comm(\pp, P;\, r),\;\; P(z) = v,\;\; \deg(P) \le n \,\bigr\}.
+    C_P \leftarrow \commit(\pp, P;\, r),\;\; P(z) = v,\;\; \deg(P) \le n \,\bigr\}.
 \]
 
 The \textbf{evaluation binding} game $\mathsf{EvalBind}^{\mathcal{A}}_{\mathrm{PC}}$ is:
@@ -337,8 +311,8 @@ The \textbf{evaluation binding} game $\mathsf{EvalBind}^{\mathcal{A}}_{\mathrm{P
 \begin{algorithmic}[1]
   \State $\pp \xleftarrow{\$} \setup(n)$
   \State $P,\; z,\; C_P,\; (\pi_1, v_1),\; (\pi_2, v_2) \xleftarrow{\$} \mathcal{A}(\pp)$
-  \State \Return $\verify(\pp, C_P, z, v_1, \pi_1) = 1$
-    \textbf{ and } $\verify(\pp, C_P, z, v_2, \pi_2) = 1$
+  \State \Return $\verifyproof(\pp, C_P, z, v_1, \pi_1) = 1$
+    \textbf{ and } $\verifyproof(\pp, C_P, z, v_2, \pi_2) = 1$
     \textbf{ and } $v_1 \neq v_2$
 \end{algorithmic}
 \end{algorithm}
@@ -348,7 +322,7 @@ The \textbf{evaluation binding} game $\mathsf{EvalBind}^{\mathcal{A}}_{\mathrm{P
 \begin{remark}[Interactive Soundness]
 When the open protocol is interactive, the PC is \emph{sound} if
 \[
-  \open\bigl[\PP \leftrightarrow \VV\bigr]
+  \open\bigl[\prover \leftrightarrow \verifier\bigr]
 \]
 is a \emph{sound interactive proof} for the relation $\mathcal{R}_{\mathrm{PC}}$.
 
@@ -401,9 +375,9 @@ so that $P(z) = \langle \vec{p}, \vec{y} \rangle$ where $\vec{p} = (a_0, \ldots,
   font=\small
 ]
   % Prover side
-  \node[align=left] (P) at (-3, 0) {$\mathbf{Open}[\mathcal{P}](\pp, C_{\vec{p}}, \vec{p}, n, z, v, r_p)$};
+  \node[align=left] (P) at (-3, 0) {$\mathbf{Open}[\prover](\pp, C_{\vec{p}}, \vec{p}, n, z, v, r_p)$};
   % Verifier side
-  \node[align=left] (V) at (5, 0) {$\mathbf{Open}[\mathcal{V}](\pp, C_{\vec{p}}, n, z, v)$};
+  \node[align=left] (V) at (5, 0) {$\mathbf{Open}[\verifier](\pp, C_{\vec{p}}, n, z, v)$};
 
   % Shared computation
   \node[align=left] (y1) at (-3, -0.8) {$\vec{y} \leftarrow \langle 1, z, z^2, \ldots, z^n \rangle$};
@@ -411,7 +385,7 @@ so that $P(z) = \langle \vec{p}, \vec{y} \rangle$ where $\vec{p} = (a_0, \ldots,
 
   % Prover actions
   \node[align=left] (pr1) at (-3, -1.6) {$\vec{d} \xleftarrow{\$} \Z_p^{n+1}$; $r_1 \xleftarrow{\$} \Z_p$};
-  \node[align=left] (pr2) at (-3, -2.2) {$C_1 \leftarrow \comm(\pp, \vec{d}; r_1)$};
+  \node[align=left] (pr2) at (-3, -2.2) {$C_1 \leftarrow \commit(\pp, \vec{d}; r_1)$};
   \node[align=left] (pr3) at (-3, -2.8) {$v_{\vec{d}} \leftarrow \langle \vec{d}, \vec{y} \rangle$};
 
   % Arrow 1: C1, v_d
@@ -431,7 +405,7 @@ so that $P(z) = \langle \vec{p}, \vec{y} \rangle$ where $\vec{p} = (a_0, \ldots,
   \draw[arr] (-1, -6.4) -- (3.5, -6.4) node[midway, above] {$\vec{p}',\; r_{\vec{p}'}$};
 
   % Verifier checks
-  \node[align=left] (vc) at (5, -7.0) {Return $eC_{\vec{p}} + C_1 = \comm(\pp, \vec{p}'; r_{\vec{p}'})$};
+  \node[align=left] (vc) at (5, -7.0) {Return $eC_{\vec{p}} + C_1 = \commit(\pp, \vec{p}'; r_{\vec{p}'})$};
   \node[align=left] (vc2) at (5, -7.6) {$\quad\quad \wedge\; ev + v_{\vec{d}} = \langle \vec{p}', \vec{y} \rangle$};
 \end{tikzpicture}
 \end{center}
@@ -439,18 +413,18 @@ so that $P(z) = \langle \vec{p}, \vec{y} \rangle$ where $\vec{p} = (a_0, \ldots,
 
 \subsubsection{Why the Verifier Checks Work}
 
-\paragraph{Check 1: Commitment consistency.}
+\paragraph{Check 1: Commitment consistency}
 
-The verifier checks $eC_{\vec{p}} + C_1 = \comm(\pp, \vec{p}'; r_{\vec{p}'})$.  Expanding:
+The verifier checks $eC_{\vec{p}} + C_1 = \commit(\pp, \vec{p}'; r_{\vec{p}'})$.  Expanding:
 \begin{align*}
   eC_{\vec{p}} + C_1
   &= e(a_0 G_0 + \cdots + a_n G_n + r_p H) + (d_0 G_0 + \cdots + d_n G_n + r_1 H) \\
   &= (a_0 e + d_0) G_0 + \cdots + (a_n e + d_n) G_n + (r_p e + r_1) H \\
-  &= \comm(\pp,\; e\vec{p} + \vec{d};\; er_p + r_1)
-   = \comm(\pp, \vec{p}';\; r_{\vec{p}'}).
+  &= \commit(\pp,\; e\vec{p} + \vec{d};\; er_p + r_1)
+   = \commit(\pp, \vec{p}';\; r_{\vec{p}'}).
 \end{align*}
 
-\paragraph{Check 2: Inner product consistency.}
+\paragraph{Check 2: Inner product consistency}
 
 The verifier checks $ev + v_{\vec{d}} = \langle \vec{p}', \vec{y} \rangle$.  Expanding:
 \begin{align*}
@@ -460,7 +434,7 @@ The verifier checks $ev + v_{\vec{d}} = \langle \vec{p}', \vec{y} \rangle$.  Exp
 \end{align*}
 So if $v = \langle \vec{p}, \vec{y} \rangle = P(z)$, the check passes.
 
-\paragraph{Binding intuition.}
+\paragraph{Binding intuition}
 
 If the two checks both pass and $v_{\vec{d}} = \langle \vec{d}, \vec{y} \rangle$, then:
 \begin{align*}
@@ -482,7 +456,7 @@ We now introduce a powerful proof model that generalizes both interactive proofs
 \subsection{Definition of IOPs}
 
 \begin{definitionbox}[Definition: Interactive Oracle Proof (IOP)]
-An \textbf{Interactive Oracle Proof (IOP)} for a relation $\mathcal{R}$ is an interactive protocol between a prover $\PP_{\mathrm{IOP}}(\mathsf{x}, \mathsf{w})$ and a verifier $\VV_{\mathrm{IOP}}(\mathsf{x})$ proceeding in $k$ rounds.
+An \textbf{Interactive Oracle Proof (IOP)} for a relation $\mathcal{R}$ is an interactive protocol between a prover $\prover_{\mathrm{IOP}}(\mathsf{x}, \mathsf{w})$ and a verifier $\verifier_{\mathrm{IOP}}(\mathsf{x})$ proceeding in $k$ rounds.
 
 In each round $i = 1, \ldots, k$:
 \begin{enumerate}
@@ -612,11 +586,11 @@ The sumcheck protocol can be naturally cast as a PIOP.  In each round $j = 1, \l
 \begin{center}
 \begin{tabular}{p{0.45\textwidth} p{0.45\textwidth}}
 \hline
-\textbf{Sumcheck $\mathcal{P}(g, H)$} & \textbf{Sumcheck $\mathcal{V}^{\mathcal{O}_g}(H)$} \\
+\textbf{Sumcheck $\prover(g, H)$} & \textbf{Sumcheck $\verifier^{\mathcal{O}_g}(H)$} \\
 \hline
 \multicolumn{2}{l}{\textbf{Round 1:}} \\
 Compute $g_1(X_1)$ as
-$\displaystyle\sum_{x_2,\ldots,x_\ell \in \{0,1\}} g(X_1, x_2, \ldots, x_\ell)$
+$\displaystyle\sum_{x_2,\ldots,x_\ell \in \bits} g(X_1, x_2, \ldots, x_\ell)$
 &  \\
 $\xrightarrow{\quad \mathcal{O}_{g_1} \quad}$ &
 Check $H = \mathcal{O}_{g_1}(0) + \mathcal{O}_{g_1}(1)$ by querying $\mathcal{O}_{g_1}$ \\
@@ -625,7 +599,7 @@ $\xleftarrow{\quad r_1 \quad}$ & \\
 \hline
 \multicolumn{2}{l}{\textbf{Round $j$ (in general):}} \\
 Compute $g_j(X_j)$ as
-$\displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \{0,1\}} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
+$\displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \bits} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
 & \\
 $\xrightarrow{\quad \mathcal{O}_{g_j} \quad}$ &
 Query $\mathcal{O}_{g_{j-1}}$ and $\mathcal{O}_{g_j}$ to \\

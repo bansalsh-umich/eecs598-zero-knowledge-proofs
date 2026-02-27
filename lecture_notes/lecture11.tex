@@ -11,13 +11,11 @@
 
 %----------------------- Packages -----------------------
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage[protrusion=true,expansion=false]{microtype}
@@ -25,6 +23,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 %----------------------- Page style -----------------------
 \pagestyle{fancy}
@@ -36,31 +39,7 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-%----------------------- Theorem environments -----------------------
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-%----------------------- Macros -----------------------
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-
-% Convenient shorthands for this lecture
-\newcommand{\RO}{\mathcal{H}}   % random oracle / hash function
-\newcommand{\Pro}{\mathcal{P}}  % prover
-\newcommand{\Ver}{\mathcal{V}}  % verifier
+% Lecture-specific macros
 
 %=============================================================
 \begin{document}
@@ -120,7 +99,7 @@ Bellare and Rogaway in 1993~\cite{BellareRogaway93}.
 \begin{itemize}
   \item Every party has oracle access to a \emph{global random function}
         $H : \{0,1\}^* \to \{0,1\}^\ell$.
-  \item All parties---prover $\Pro$ \emph{and} verifier $\Ver$---query
+  \item All parties---prover $\prover$ \emph{and} verifier $\verifier$---query
         the \emph{same} function $H$.  Consistency is guaranteed: if two
         parties query $H$ on the same input they receive the same output.
   \item The random oracle is \emph{lazily sampled}: the challenger
@@ -189,10 +168,10 @@ When we say a scheme is secure ``in the ROM'' we mean:
 Recall that a \emph{$\Sigma$-protocol} (sigma protocol) is a
 three-message public-coin interactive proof:
 \begin{enumerate}
-  \item Prover $\Pro$ sends a \emph{commitment} $\alpha_1$ (first message).
-  \item Verifier $\Ver$ sends a uniformly random \emph{challenge}
+  \item Prover $\prover$ sends a \emph{commitment} $\alpha_1$ (first message).
+  \item Verifier $\verifier$ sends a uniformly random \emph{challenge}
         $\rho$ (second message, the ``verifier randomness'').
-  \item Prover $\Pro$ sends a \emph{response} $\alpha_2$ (third message).
+  \item Prover $\prover$ sends a \emph{response} $\alpha_2$ (third message).
 \end{enumerate}
 
 The key observation is that the verifier's only role in step 2 is to
@@ -218,7 +197,7 @@ We describe the transform for a generic $\Sigma$-protocol
 $(\mathsf{P}_{\mathrm{SP}}, \mathsf{V}_{\mathrm{SP}})$ with statement
 $\mathbb{x}$, witness $\mathbb{w}$, and random oracle $f = H$.
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
     box/.style={draw, rounded corners=4pt, minimum width=3.5cm,
@@ -231,7 +210,7 @@ $\mathbb{x}$, witness $\mathbb{w}$, and random oracle $f = H$.
   ]
 
   % Prover box
-  \node[box, label=above:{$\Pro(\mathbb{x},\mathbb{w})$}] (P) at (0,0) {
+  \node[box, label=above:{$\prover(\mathbb{x},\mathbb{w})$}] (P) at (0,0) {
     $\mathsf{P}_{\mathrm{SP}}(\mathbb{x},\mathbb{w})$
   };
 
@@ -256,7 +235,7 @@ $\mathbb{x}$, witness $\mathbb{w}$, and random oracle $f = H$.
         {$\pi \coloneqq (\alpha_1,\alpha_2,\tau)$};
 
   % Verifier box
-  \node[box, label=above:{$\Ver(\mathbb{x},\pi)$}] (V) at (9,0) {
+  \node[box, label=above:{$\verifier(\mathbb{x},\pi)$}] (V) at (9,0) {
     \parbox{3cm}{\centering
       \textbullet\ parse $\pi$ as $(\alpha_1,\alpha_2,\tau)$ \\[4pt]
       \textbullet\ derive SP randomness \\[4pt]
@@ -546,7 +525,7 @@ scheme.  The public input is $(\mathbb{G}, G, p, X)$.
 
 \subsection{Diagram: Making Schnorr Non-Interactive via Fiat-Shamir}
 
-\begin{figure}[h]
+\begin{figure}[t]
 \centering
 \begin{tikzpicture}[
     node distance=1.6cm,

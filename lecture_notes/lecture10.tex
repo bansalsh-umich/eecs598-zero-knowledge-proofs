@@ -1,12 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in, headheight=14pt]{geometry}
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
+\usepackage{amsmath, amssymb}
 \usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{xcolor}
 \usepackage{fancyhdr}
 \usepackage{tcolorbox}
 \usepackage{microtype}
@@ -14,6 +12,11 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 \usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -24,29 +27,7 @@
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0.4pt}
 
-\theoremstyle{plain}
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{fact}[theorem]{Fact}
-\newtheorem{claim}[theorem]{Claim}
-
-\newcommand{\Z}{\mathbb{Z}}
-\newcommand{\F}{\mathbb{F}}
-\newcommand{\N}{\mathbb{N}}
-\newcommand{\Fp}{\mathbb{F}_p}
-\DeclareMathOperator{\ord}{ord}
-
-% Additional commands used in this lecture
-\newcommand{\G}{\mathbb{G}}
-\newcommand{\Zp}{\mathbb{Z}_p}
-\newcommand{\getsr}{\xleftarrow{\$}}
-\newcommand{\Adv}{\mathrm{Adv}}
+% Lecture-specific macros
 
 \tcbuselibrary{theorems, skins, breakable}
 
@@ -101,19 +82,19 @@ The compilation works as follows (written in blue-ink annotations on the slide):
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
                   title={Oracle-to-PC Compiler: $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$}]
-Let $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}}, \mathcal{V}_{\mathsf{PIOP}} \rangle$ be a PIOP and $\mathsf{PC} = (\mathsf{Setup}, \mathsf{Com}, \mathsf{Open})$ be a polynomial commitment scheme. The compiled argument $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ is defined as follows:
+Let $\PIOP = \langle \PIOP[\prover], \PIOP[\verifier] \rangle$ be a PIOP and $\mathsf{PC} = (\setup, \commit, \open)$ be a polynomial commitment scheme. The compiled argument $\mathsf{Arg}[\PIOP, \mathsf{PC}]$ is defined as follows:
 
 \begin{enumerate}
-  \item \textbf{Commitment phase:} Whenever the PIOP prover $\mathcal{P}_{\mathsf{PIOP}}$ sends an oracle $p$, the argument prover $\mathsf{Arg}[\mathsf{PIOP},\mathsf{PC}].\mathcal{P}$ commits to $p$ using $\mathsf{PC}.\mathsf{Com}$, and sends the commitment $\mathsf{comm}$ to the verifier $\mathcal{V}$.
-  \item \textbf{Query/opening phase:} On a query $r$ to the oracle $p$ from $\mathcal{V}_{\mathsf{PIOP}}$, the argument parties $\mathsf{Arg}[\mathsf{PIOP},\mathsf{PC}].\mathcal{P}$ and $\mathcal{V}$ run $\mathsf{Open}(\mathsf{comm}, r, v)$ (i.e., the prover opens the commitment at point $r$ to value $v = p(r)$).
-  \item \textbf{Output:} The argument verifier outputs whatever the PIOP verifier $\mathcal{V}_{\mathsf{PIOP}}$ outputs.
+  \item \textbf{Commitment phase:} Whenever the PIOP prover $\PIOP[\prover]$ sends an oracle $p$, the argument prover $\mathsf{Arg}[\PIOP,\mathsf{PC}].\prover$ commits to $p$ using $\mathsf{PC}.\commit$, and sends the commitment $\mathsf{comm}$ to the verifier $\verifier$.
+  \item \textbf{Query/opening phase:} On a query $r$ to the oracle $p$ from $\PIOP[\verifier]$, the argument parties $\mathsf{Arg}[\PIOP,\mathsf{PC}].\prover$ and $\verifier$ run $\open(\mathsf{comm}, r, v)$ (i.e., the prover opens the commitment at point $r$ to value $v = p(r)$).
+  \item \textbf{Output:} The argument verifier outputs whatever the PIOP verifier $\PIOP[\verifier]$ outputs.
 \end{enumerate}
 \end{tcolorbox}
 
 \subsection{Soundness of the Compiled Argument}
 
 \begin{claim}
-Let $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}}, \mathcal{V}_{\mathsf{PIOP}} \rangle$ be a polynomial interactive oracle proof for language $\mathcal{L}$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$. Let $\mathsf{PC} = (\mathsf{Setup}, \mathsf{Com}, \mathsf{Open})$ be a polynomial commitment scheme. Let $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ be the argument obtained from the ``oracle-to-PC'' compiler. If $\mathsf{PC.Com}$ is binding, $\mathsf{PC.Open}$ is a proof of knowledge, and $\mathsf{PIOP}$ is sound, then $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ is a sound argument for $\mathcal{L}$.
+Let $\PIOP = \langle \PIOP[\prover], \PIOP[\verifier] \rangle$ be a polynomial interactive oracle proof for language $\lang$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$. Let $\mathsf{PC} = (\setup, \commit, \open)$ be a polynomial commitment scheme. Let $\mathsf{Arg}[\PIOP, \mathsf{PC}]$ be the argument obtained from the ``oracle-to-PC'' compiler. If $\mathsf{PC}.\commit$ is binding, $\mathsf{PC}.\open$ is a proof of knowledge, and $\PIOP$ is sound, then $\mathsf{Arg}[\PIOP, \mathsf{PC}]$ is a sound argument for $\lang$.
 \end{claim}
 
 \begin{remark}
@@ -127,7 +108,7 @@ The claim (circled in blue on the slide) is the key theorem justifying the PIOP-
 
 \subsection{Structure of a Sigma Protocol}
 
-A \emph{sigma protocol} (also written $\Sigma$-protocol) is a special class of 3-move interactive proof between a prover $P_{\mathsf{SP}}$ and a verifier $V_{\mathsf{SP}}$. The name comes from the shape of the flow diagram: the three messages form a ``$\Sigma$'' pattern.
+A \emph{sigma protocol} (also written $\Sigma$-protocol) is a special class of 3-move interactive proof between a prover $\mathsf{SP}[\prover]$ and a verifier $\mathsf{SP}[\verifier]$. The name comes from the shape of the flow diagram: the three messages form a ``$\Sigma$'' pattern.
 
 \medskip
 
@@ -149,8 +130,8 @@ The verifier then runs a deterministic check $\mathsf{Verify}(x, \alpha_1, \rho,
   arr/.style={-{Stealth[length=7pt]}, thick},
   node distance=5cm
 ]
-  \node[box] (P) {$P_{\mathsf{SP}}(\mathbb{X}, \mathbb{W})$};
-  \node[box, right=of P] (V) {$V_{\mathsf{SP}}(\mathbb{X})$};
+  \node[box] (P) {$\mathsf{SP}[\prover](\mathbb{X}, \mathbb{W})$};
+  \node[box, right=of P] (V) {$\mathsf{SP}[\verifier](\mathbb{X})$};
 
   % Arrow 1: R (commitment)
   \draw[arr] ([yshift=0.6cm]P.east)  -- node[above]{$\alpha_1$\;($R$)} ([yshift=0.6cm]V.west);
@@ -178,7 +159,7 @@ The notation in the slides also identifies this structure with ``MA'' (Merlin-Ar
 
 \begin{tcolorbox}[colback=green!5!white, colframe=green!60!black,
                   title={Definition: $k$-Special Soundness ($k$-SS)}]
-Let $\mathsf{SP} = \langle P, V \rangle$ be a $\Sigma$-protocol for relation $\mathcal{R}$.
+Let $\mathsf{SP} = \langle \prover, \verifier \rangle$ be a $\Sigma$-protocol for relation $\calR$.
 
 $\mathsf{SP}$ is \textbf{$k$-special sound} if there exists a deterministic polynomial-time extractor $\mathsf{Ext}$ such that:
 
@@ -191,12 +172,12 @@ Whenever $\mathsf{Ext}$ is given as input:
     \]
     where the challenges $c_i$ are \emph{pairwise distinct},
 \end{itemize}
-$\mathsf{Ext}$ outputs a witness $w$ such that $(x, w) \in \mathcal{R}$.
+$\mathsf{Ext}$ outputs a witness $w$ such that $(x, w) \in \calR$.
 
 Formally:
 \[
   \mathsf{Ext}\!\left(x,\; (R,c_1,z_1), \ldots, (R,c_k,z_k)\right) = w
-  \quad \text{s.t.} \quad (x,w) \in \mathcal{R}.
+  \quad \text{s.t.} \quad (x,w) \in \calR.
 \]
 \end{tcolorbox}
 
@@ -211,11 +192,11 @@ The slides note (boxed in blue) that $k$-special soundness implies \emph{special
 
 \subsection{Setup and Relation}
 
-Let $\mathbb{G}$ be a cyclic group of prime order $p$ with generator $G$. Schnorr's protocol is a $\Sigma$-protocol for the discrete-logarithm relation:
+Let $\G$ be a cyclic group of prime order $p$ with generator $G$. Schnorr's protocol is a $\Sigma$-protocol for the discrete-logarithm relation:
 \[
-  \mathcal{R}_{\mathsf{DL}} = \bigl\{\,(X,\, x) \;\big|\; X = xG \;\text{ in } \mathbb{G}\,\bigr\}.
+  \calR_{\mathsf{DL}} = \bigl\{\,(X,\, x) \;\big|\; X = xG \;\text{ in } \G\,\bigr\}.
 \]
-The public input (statement) is $X \in \mathbb{G}$ and the private input (witness) is $x \in \Zp$ such that $X = xG$.
+The public input (statement) is $X \in \G$ and the private input (witness) is $x \in \Zp$ such that $X = xG$.
 
 \subsection{Protocol Description}
 
@@ -228,12 +209,12 @@ The public input (statement) is $X \in \mathbb{G}$ and the private input (witnes
   node distance=7cm
 ]
   \node[align=left, font=\small] (P) {
-    \underline{$\mathsf{Schnorr}[\mathcal{P}](\mathbb{G}, G, p, X;\, x)$}\\[4pt]
+    \underline{$\mathsf{Schnorr}[\prover](\G, G, p, X;\, x)$}\\[4pt]
     $r \getsr \Zp$\\
     $R \leftarrow rG$
   };
   \node[align=right, font=\small, right=of P] (V) {
-    \underline{$\mathsf{Schnorr}[\mathcal{V}](\mathbb{G}, G, p, X)$}
+    \underline{$\mathsf{Schnorr}[\verifier](\G, G, p, X)$}
   };
 
   % R arrow
@@ -270,12 +251,12 @@ The verification equation $zG = R + cX$ holds for an honest prover because:
   \implies
   zG = (r + cx)G = rG + c(xG) = R + cX.
 \]
-Here we use $X = xG$ (the defining relation) and the linearity of scalar multiplication in $\mathbb{G}$.
+Here we use $X = xG$ (the defining relation) and the linearity of scalar multiplication in $\G$.
 
 \subsection{Completeness}
 
 \begin{proposition}[Completeness of Schnorr]
-If $(X, x) \in \mathcal{R}_{\mathsf{DL}}$ and the prover follows the protocol honestly, then the verifier always accepts.
+If $(X, x) \in \calR_{\mathsf{DL}}$ and the prover follows the protocol honestly, then the verifier always accepts.
 \end{proposition}
 
 \begin{proof}
@@ -289,7 +270,7 @@ Schnorr's protocol is 2-special sound.
 \end{theorem}
 
 \begin{proof}
-Suppose the extractor $\mathsf{Ext}$ is given the public input $X$ (with group parameters $\mathbb{G}, G, p$) and two accepting transcripts on the same first message $R$ with distinct challenges:
+Suppose the extractor $\mathsf{Ext}$ is given the public input $X$ (with group parameters $\G, G, p$) and two accepting transcripts on the same first message $R$ with distinct challenges:
 \[
   (R,\, c_1,\, z_1) \quad \text{and} \quad (R,\, c_2,\, z_2), \quad c_1 \neq c_2.
 \]
@@ -305,7 +286,7 @@ Since $c_1 \neq c_2$ and $p$ is prime, the scalar $(c_1 - c_2)$ is invertible in
 \[
   \frac{z_1 - z_2}{c_1 - c_2} \cdot G = X.
 \]
-This gives a witness $w = \dfrac{z_1 - z_2}{c_1 - c_2} \pmod{p}$ satisfying $wG = X$, i.e., $(X, w) \in \mathcal{R}_{\mathsf{DL}}$.
+This gives a witness $w = \dfrac{z_1 - z_2}{c_1 - c_2} \pmod{p}$ satisfying $wG = X$, i.e., $(X, w) \in \calR_{\mathsf{DL}}$.
 
 Hence Schnorr is 2-SS. \qquad (Annotated: ``Schnorr is 2-SS.'')
 \end{proof}
@@ -329,7 +310,7 @@ The extracted witness is $x = \dfrac{z_1 - z_2}{c_1 - c_2}$.
 
 \subsection{Setup and Relation}
 
-Let $\mathbb{G}$ be a cyclic group of prime order $p$ with two independent generators $G$ and $H$ (``independent'' meaning nobody knows $\log_G H$). A \emph{Pedersen commitment} to values $(a, b) \in \Zp^2$ is:
+Let $\G$ be a cyclic group of prime order $p$ with two independent generators $G$ and $H$ (``independent'' meaning nobody knows $\log_G H$). A \emph{Pedersen commitment} to values $(a, b) \in \Zp^2$ is:
 \[
   C = aG + bH.
 \]
@@ -337,7 +318,7 @@ The commitment is perfectly hiding (because $b$ serves as a randomness blinder) 
 
 The relation for Okamoto's protocol is:
 \[
-  \mathcal{R}_{\mathsf{Ped}} = \bigl\{\,(C,\; (a,b)) \;\big|\; C = aG + bH\;\text{ in }\mathbb{G}\,\bigr\}.
+  \calR_{\mathsf{Ped}} = \bigl\{\,(C,\; (a,b)) \;\big|\; C = aG + bH\;\text{ in }\G\,\bigr\}.
 \]
 
 \subsection{Protocol Description}
@@ -354,12 +335,12 @@ The relation for Okamoto's protocol is:
   node distance=7cm
 ]
   \node[align=left, font=\small] (P) {
-    \underline{$\mathsf{Okamoto}[\mathcal{P}](\mathbb{G}, G, H, p, C;\; a, b)$}\\[4pt]
+    \underline{$\mathsf{Okamoto}[\prover](\G, G, H, p, C;\; a, b)$}\\[4pt]
     $\alpha, \beta \getsr \Zp$\\
     $R \leftarrow \alpha G + \beta H$
   };
   \node[align=right, font=\small, right=of P] (V) {
-    \underline{$\mathsf{Okamoto}[\mathcal{V}](\mathbb{G}, G, H, p, C)$}
+    \underline{$\mathsf{Okamoto}[\verifier](\G, G, H, p, C)$}
   };
 
   % R arrow
@@ -436,24 +417,24 @@ Setting $a^* = \dfrac{z_{a,1} - z_{a,2}}{c_1 - c_2}$ and $b^* = \dfrac{z_{b,1} -
 
 \subsection{The DDH Relation and Problem}
 
-The \emph{Decisional Diffie--Hellman} (DDH) relation concerns triples $(A, B, C)$ in a group $\mathbb{G}$ that are \emph{Diffie--Hellman triples}: there exists a scalar $b$ such that $B = bG$ and $C = bA$.
+The \emph{Decisional Diffie--Hellman} (DDH) relation concerns triples $(A, B, C)$ in a group $\G$ that are \emph{Diffie--Hellman triples}: there exists a scalar $b$ such that $B = bG$ and $C = bA$.
 
 \begin{tcolorbox}[colback=yellow!8!white, colframe=orange!80!black,
                   title={DDH Problem (game formulation)}]
 \begin{algorithmic}[1]
-  \Procedure{$\mathrm{DDH}_b^{\mathbb{G},G,p}(\mathcal{A})$}{}
+  \Procedure{$\mathrm{DDH}_b^{\G,G,p}(\advA)$}{}
     \State $a, b, c \getsr \Zp$;\quad $A \leftarrow aG$;\quad $B \leftarrow bG$
     \State $C_0 \leftarrow abG$;\quad $C_1 \leftarrow cG$
-    \State $b' \getsr \mathcal{A}(A, B, C_b, \mathbb{G}, G, p)$
+    \State $b' \getsr \advA(A, B, C_b, \G, G, p)$
     \State \Return $b'$
   \EndProcedure
 \end{algorithmic}
 \medskip
-The DDH advantage of adversary $\mathcal{A}$ is:
+The DDH advantage of adversary $\advA$ is:
 \[
-  \mathrm{AdvDDH}^{\mathbb{G},G,p}(\mathcal{A})
-  = \Bigl|\Pr\bigl[\mathrm{DDH}_0^{\mathbb{G},G,p}(\mathcal{A})=1\bigr]
-    - \Pr\bigl[\mathrm{DDH}_1^{\mathbb{G},G,p}(\mathcal{A})=1\bigr]\Bigr|.
+  \mathrm{AdvDDH}^{\G,G,p}(\advA)
+  = \Bigl|\Pr\bigl[\mathrm{DDH}_0^{\G,G,p}(\advA)=1\bigr]
+    - \Pr\bigl[\mathrm{DDH}_1^{\G,G,p}(\advA)=1\bigr]\Bigr|.
 \]
 When $b=0$ the challenge is a DH triple $(A,B,abG)$; when $b=1$ it is a random triple $(A,B,cG)$.
 \end{tcolorbox}
@@ -465,7 +446,7 @@ The Chaum--Pedersen protocol proves knowledge of a discrete logarithm $b$ such t
 \medskip
 The relation is (annotated in blue on the slide):
 \[
-  \mathcal{R} = \bigl\{\,(G, A, B, C;\; b) \;\big|\; B = bG \;\wedge\; C = bA\,\bigr\}.
+  \calR = \bigl\{\,(G, A, B, C;\; b) \;\big|\; B = bG \;\wedge\; C = bA\,\bigr\}.
 \]
 
 \begin{tcolorbox}[colback=gray!8!white, colframe=black,
@@ -477,12 +458,12 @@ The relation is (annotated in blue on the slide):
   node distance=7.5cm
 ]
   \node[align=left, font=\small] (P) {
-    \underline{$\mathsf{ChPed}[\mathcal{P}](\mathbb{G}, G, A, B, C;\; b)$}\\[4pt]
+    \underline{$\mathsf{ChPed}[\prover](\G, G, A, B, C;\; b)$}\\[4pt]
     $\beta \getsr \Zp$\\
     $R_G \leftarrow \beta G$;\quad $R_A \leftarrow \beta A$
   };
   \node[align=right, font=\small, right=of P] (V) {
-    \underline{$\mathsf{ChPed}[\mathcal{V}](\mathbb{G}, G, A, B, C)$}
+    \underline{$\mathsf{ChPed}[\verifier](\G, G, A, B, C)$}
   };
 
   % R_G, R_A arrow
@@ -553,7 +534,7 @@ Subtracting corresponding equations:
 \[
   (z_1 - z_2)A = (c_1 - c_2)C \quad \Longrightarrow \quad \frac{z_1 - z_2}{c_1 - c_2}\cdot A = C.
 \]
-Setting $b^* = \dfrac{z_1 - z_2}{c_1 - c_2} \in \Zp$, we have $b^*G = B$ and $b^*A = C$. Hence $(G, A, B, C; b^*)$ satisfies the relation $\mathcal{R}$, and the extractor outputs $b^*$.
+Setting $b^* = \dfrac{z_1 - z_2}{c_1 - c_2} \in \Zp$, we have $b^*G = B$ and $b^*A = C$. Hence $(G, A, B, C; b^*)$ satisfies the relation $\calR$, and the extractor outputs $b^*$.
 \end{proof}
 
 \begin{remark}

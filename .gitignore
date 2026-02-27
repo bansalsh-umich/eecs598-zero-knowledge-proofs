@@ -13,3 +13,6 @@
 *.nav
 *.snm
 *.vrb
+
+# Compiled lecture note PDFs
+lecture_notes/*.pdf
