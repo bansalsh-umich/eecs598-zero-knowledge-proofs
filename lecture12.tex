@@ -1,0 +1,573 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 12: Fiat-Shamir Security and Zero Knowledge}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+\DeclareMathOperator{\ord}{ord}
+
+% Additional convenience macros
+\newcommand{\G}{\mathbb{G}}
+\newcommand{\samplefrom}{\xleftarrow{\$}}
+\newcommand{\Adv}{\mathcal{A}}
+\newcommand{\Sim}{\mathcal{S}}
+\newcommand{\Pro}{\mathcal{P}}
+\newcommand{\Ver}{\mathcal{V}}
+\newcommand{\RO}{\mathbf{F}}   % Random oracle written as bold F in slides
+\newcommand{\pp}{\mathsf{pp}}
+\newcommand{\verify}{\mathsf{verify}}
+
+\tcbuselibrary{skins, breakable}
+
+\begin{document}
+
+%-----------------------------------------------------------------------
+% Title Block
+%-----------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026}\\[4pt]
+  {\large \textbf{Lecture 12: Fiat-Shamir Security and Zero Knowledge}}\\[4pt]
+  {\large Instructor: Paul Grubbs \quad
+    \href{mailto:paulgrub@umich.edu}{\texttt{paulgrub@umich.edu}} \quad
+    Beyster 4709}
+\end{center}
+
+\vspace{0.5em}
+\hrule
+\vspace{1em}
+
+%-----------------------------------------------------------------------
+% Agenda
+%-----------------------------------------------------------------------
+\section*{Agenda}
+\begin{itemize}
+  \item Announcements
+  \item Random oracles are collision-resistant
+  \item Security of Fiat-Shamir
+  \item ``Weak'' Fiat-Shamir attacks
+  \item Zero knowledge: intuition
+\end{itemize}
+
+\newpage
+
+%-----------------------------------------------------------------------
+\section{Announcements}
+%-----------------------------------------------------------------------
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item Autograder is working.
+  \item Due date: 2/20.
+        \begin{itemize}
+          \item \underline{May} get pushed back -- will announce if so.
+        \end{itemize}
+\end{itemize}
+
+%-----------------------------------------------------------------------
+\section{Random Oracles Are Collision-Resistant}
+%-----------------------------------------------------------------------
+
+In this section we show that a random oracle $\RO$ (modeled as a lazily-sampled
+function $\RO : \{0,1\}^* \to \{0,1\}^n$) is collision-resistant with
+overwhelming probability, even against adversaries that make many queries.
+
+\subsection{The Collision-Resistance Game}
+
+\begin{tcolorbox}[title={Game \textsf{CollRO}($\Adv$)}, colback=blue!5, colframe=blue!40!black]
+\textbf{\underline{\textsf{CollRO}($\Adv$):}}\\
+$T \leftarrow [\,]$\\
+$x_1, x_2 \samplefrom \Adv^{\RO}$\\
+Return $\RO(x_1) = \RO(x_2) \wedge x_1 \neq x_2$
+
+\bigskip
+\textbf{\underline{$\RO(x)$:}}\\
+If $T[x] = \bot$:
+\begin{itemize}[leftmargin=2em, topsep=2pt, itemsep=0pt]
+  \item $y \samplefrom \{0,1\}^n$
+  \item $T[x] \leftarrow y$
+\end{itemize}
+Return $T[x]$
+\end{tcolorbox}
+
+The table $T$ implements the random oracle lazily: each input is given a fresh
+uniform $n$-bit output the first time it is queried, and the same output is
+returned on subsequent queries.
+
+\subsection{Collision-Resistance Theorem}
+
+\begin{theorem}[Collision-Resistance of the Random Oracle]
+\label{thm:collro}
+For any adversary $\Adv$ making at most $q$ queries to $\RO$ in game
+\textsf{CollRO},
+\[
+  \Pr[\textsf{CollRO}(\Adv) = 1] \;\le\; \frac{q^2}{2^n}.
+\]
+\end{theorem}
+
+\begin{proof}
+We use a \emph{game-hopping} argument.
+
+\medskip
+\noindent\textbf{Game $G$ (modified game).}
+Define a new game $G$ that is identical to \textsf{CollRO} except the random
+oracle oracle procedure $\RO(x)$ is changed to:
+
+\begin{tcolorbox}[colback=gray!8, colframe=gray!50]
+\textbf{\underline{$\RO(x)$ in $G$:}}\\
+If $T[x] = \bot$:
+\begin{itemize}[leftmargin=2em, topsep=2pt, itemsep=0pt]
+  \item $y \samplefrom \{0,1\}^n$
+  \item \textcolor{red}{If $\exists\, x_0$ such that $y$ already appears in
+        $T$ (i.e., $y \in T \setminus \{T[x]\}$):}
+  \item \textcolor{red}{\quad $y \samplefrom \{0,1\}^n \setminus T$ \quad
+        (resample from outside the current image)}
+  \item \textcolor{red}{\quad $T[x] \leftarrow y$}
+\end{itemize}
+Return $T[x]$
+\end{tcolorbox}
+
+\noindent In game $G$ the oracle always assigns \emph{distinct} outputs to
+distinct inputs. Therefore a collision is impossible by construction:
+\[
+  \Pr[G(\Adv) = 1] = 0.
+\]
+
+\noindent\textbf{Relating $G$ to \textsf{CollRO}.}
+By a standard hybrid argument,
+\[
+  \Pr[\textsf{CollRO}(\Adv) = 1]
+  \;\le\;
+  \Pr[G(\Adv) = 1] + \Pr[\text{resample}],
+\]
+so
+\[
+  \Pr[\textsf{CollRO}(\Adv) = 1] \;\le\; 0 + \Pr[\text{resample}].
+\]
+
+\noindent\textbf{Bounding $\Pr[\text{resample}]$.}
+The resampling event occurs when a freshly drawn $y$ collides with one of the
+(at most $q-1$) values already in $T$.  Each such collision happens with
+probability at most $(q-1)/2^n$.  Across $q$ queries, a union bound gives
+\[
+  \Pr[\text{resample}] \;\le\; \frac{q(q-1)}{2^n} \;\le\; \frac{q^2}{2^n}.
+\]
+
+\noindent Combining the two steps:
+\[
+  \Pr[\textsf{CollRO}(\Adv) = 1]
+  \;\le\;
+  \frac{q^2}{2^n}. \qedhere
+\]
+\end{proof}
+
+\begin{remark}
+The bound $q^2/2^n$ is a \emph{birthday-bound}: for $q \approx 2^{n/2}$
+queries the probability approaches $1$, which matches the well-known birthday
+paradox.  For $n = 256$ and a realistic number of queries (e.g., $q = 2^{64}$)
+the bound is $2^{128}/2^{256} = 2^{-128}$, which is negligible.
+\end{remark}
+
+%-----------------------------------------------------------------------
+\section{Security of Fiat-Shamir}
+%-----------------------------------------------------------------------
+
+\subsection{Recap: Fiat-Shamir Transform}
+
+The Fiat-Shamir (F-S) transform converts a public-coin interactive argument
+(a sigma/special-sound protocol) into a non-interactive argument in the random
+oracle model by replacing the verifier's challenge with a random oracle query.
+
+\begin{tcolorbox}[title={Fiat-Shamir: Replace the Verifier with a Random Oracle},
+                  colback=green!5, colframe=green!40!black]
+\begin{center}
+\begin{tikzpicture}[
+    bigbox/.style={draw, rounded corners=4pt, thick, minimum width=3.8cm, minimum height=3.4cm},
+    sbox/.style={draw, thick, font=\small, minimum height=0.55cm, minimum width=2.4cm, align=center},
+    rof/.style={draw, thick, fill=green!25, font=\small, shape=diamond,
+                minimum width=0.8cm, minimum height=0.8cm},
+    arr/.style={-Stealth, thick},
+  ]
+
+  %--- Prover side ---
+  \node[bigbox] (Pbox) at (0,0) {};
+  \node[above=0pt of Pbox.north, font=\small\itshape] {$\mathcal{P}(\mathbb{x},\mathbb{w})$};
+  \node[sbox, fill=gray!20] (PSP) at (-0.05, 0.6) {$\mathbf{P}_{\mathrm{SP}}(\mathbb{x},\mathbb{w})$};
+  \node[sbox] (hbox) at (1.75, 0.6) {$\mathbb{x},\alpha_1,\tau$};
+  \node[rof] (f1) at (1.75, -0.35) {$f$};
+  \draw[arr] (PSP.east) -- node[above,font=\scriptsize]{$\alpha_1$} (hbox.west);
+  \draw[arr] (hbox.south) -- (f1.north);
+  \draw[arr, color=green!60!black] (f1.west) -- node[above,font=\scriptsize]{$\rho$}
+       (PSP.east |- f1.west);
+  \draw[arr] (PSP.east |- {(0,-1.1)}) --
+       node[above,font=\scriptsize]{$\alpha_2$} (1.75,-1.1);
+  \node[font=\small, below=2pt of Pbox.south] {$\pi \coloneqq (\alpha_1,\alpha_2,\tau)$};
+
+  %--- pi arrow ---
+  \draw[arr, very thick] (Pbox.east) -- node[above,font=\small]{$\pi$}
+       node[below,font=\small]{} (4.05,0);
+
+  %--- Verifier side ---
+  \node[bigbox, minimum width=4.0cm] (Vbox) at (5.9,0) {};
+  \node[above=0pt of Vbox.north, font=\small\itshape] {$\mathcal{V}(\mathbb{x},\pi)$};
+  \node[font=\small, align=left, anchor=north west] at ($(Vbox.north west)+(0.12,-0.18)$)
+       {\textbullet\ parse $\pi$ as $(\alpha_1,\alpha_2,\tau)$\\[3pt]
+        \textbullet\ derive SP randomness};
+  \node[sbox] (vhbox) at (5.55, -0.6) {$\mathbb{x},\alpha_1,\tau$};
+  \node[rof]  (f2) at (7.15, -0.6) {$f$};
+  \draw[arr] (vhbox.east) -- (f2.west);
+  \node[right=2pt of f2, font=\small] {$\rho$};
+  \node[font=\small] at (5.9,-1.2) {\textbullet\ check SP decision};
+  \node[sbox, fill=gray!20, minimum width=3.0cm] (VSP) at (5.9,-1.75)
+       {$\mathbf{V}_{\mathrm{SP}}(\mathbb{x},\alpha_1,\rho,\alpha_2)$};
+
+\end{tikzpicture}
+\end{center}
+\end{tcolorbox}
+
+\noindent\textbf{Construction.} Given a sigma protocol $\mathrm{Arg} = (\mathsf{Setup}, P, V)$:
+\begin{itemize}
+  \item The \emph{prover} $\Pro^{\RO}(\mathbb{x}, \mathbb{w})$:
+    \begin{enumerate}
+      \item Runs $P_{\mathrm{SP}}(\mathbb{x}, \mathbb{w})$ to get the first message $\alpha_1$
+            (the commitment) and auxiliary state $\tau$.
+      \item Computes the challenge $\rho \leftarrow \RO(\mathbb{x}, \alpha_1, \tau)$.
+      \item Runs $P_{\mathrm{SP}}$ with challenge $\rho$ to get the response $\alpha_2$.
+      \item Outputs proof $\pi \coloneqq (\alpha_1, \alpha_2, \tau)$.
+    \end{enumerate}
+  \item The \emph{verifier} $\Ver^{\RO}(\mathbb{x}, \pi)$:
+    \begin{enumerate}
+      \item Parses $\pi$ as $(\alpha_1, \alpha_2, \tau)$.
+      \item Recomputes $\rho \leftarrow \RO(\mathbb{x}, \alpha_1, \tau)$.
+      \item Checks $V_{\mathrm{SP}}(\mathbb{x}, \alpha_1, \rho, \alpha_2) = 1$.
+    \end{enumerate}
+\end{itemize}
+
+\subsection{Security Theorem for Fiat-Shamir}
+
+\begin{tcolorbox}[title={Theorem: Security of Fiat-Shamir},
+                  colback=yellow!10, colframe=orange!60!black, breakable]
+\textbf{Theorem.}
+Let $\mathrm{Arg} = (\mathsf{Setup}, P, V)$ be an interactive argument for
+relation $\mathcal{R}$.  Let $\mathrm{FS}[\mathrm{Arg}]$ be the Fiat-Shamir
+compiled non-interactive argument.
+
+If $\mathrm{Arg}$ has \emph{state-restoration knowledge soundness} with
+knowledge error $\kappa_{\mathrm{sr}}$, then $\mathrm{FS}[\mathrm{Arg}]$ has
+\emph{adaptive (NI) knowledge soundness} with knowledge error
+\[
+  \kappa_{\mathrm{fs}} \le \kappa_{\mathrm{sr}}.
+\]
+\end{tcolorbox}
+
+\begin{proof}[Proof sketch]
+The proof uses the random oracle to ``program'' the challenges seen by the
+interactive prover.  Given an adversary $\Adv^{\RO}$ that produces a convincing
+non-interactive proof for a false statement, we construct an extractor $E$ that
+rewinds $\Adv$ by forking on the random oracle queries.  Because $\Adv$ must
+query $\RO$ to obtain the challenge, the extractor can reprogram the oracle at
+the appropriate query to obtain two distinct transcripts with the same
+commitment but different challenges.  The state-restoration knowledge soundness
+of the underlying interactive argument then guarantees extraction of a witness,
+yielding adaptive knowledge soundness for $\mathrm{FS}[\mathrm{Arg}]$.
+\end{proof}
+
+\begin{remark}
+The reduction from adaptive knowledge soundness of $\mathrm{FS}[\mathrm{Arg}]$
+to state-restoration knowledge soundness of $\mathrm{Arg}$ is the key insight
+behind the F-S security proof.  The random oracle is essential: in the standard
+model Fiat-Shamir is known to be insecure in general.
+\end{remark}
+
+%-----------------------------------------------------------------------
+\section{``Weak'' Fiat-Shamir Attacks}
+%-----------------------------------------------------------------------
+
+A critical subtlety in applying Fiat-Shamir is that the random oracle input
+\emph{must include the statement} (public input) $\mathbb{x}$.  If it does not,
+the resulting non-interactive argument is called a \emph{weak Fiat-Shamir}
+scheme and is insecure.  This section explains the issue concretely for the
+Schnorr identification protocol.
+
+\subsection{Correct Non-Interactive Schnorr (NISchnorr)}
+
+Recall the Schnorr sigma protocol for the language
+$\mathcal{L}_{\mathrm{DL}} = \{X \in \G \mid \exists\, x \in \Z_p : X = xG\}$
+where $(\G, G, p)$ are public group parameters.
+
+\begin{tcolorbox}[title={NISchnorr (correct Fiat-Shamir)},
+                  colback=blue!5, colframe=blue!40!black]
+\textbf{\underline{NISchnorr.$\Pro^{\RO}(\G, G, p, X;\; x)$:}}
+\begin{algorithmic}[1]
+  \State $r \samplefrom \Z_p$;\quad $R \leftarrow rG$
+  \State $c \leftarrow \RO(\G, G, p, X, R)$  \Comment{statement $X$ is included}
+  \State $z \leftarrow r + cx$
+  \State Return $(R, z)$
+\end{algorithmic}
+
+\medskip
+\textbf{\underline{NISchnorr.$\Ver^{\RO}(\G, G, p, X, \pi)$:}}
+\begin{algorithmic}[1]
+  \State $R, z \leftarrow \pi$
+  \State $c \leftarrow \RO(\G, G, p, X, R)$  \Comment{statement $X$ is included}
+  \State Return $zG = R + cX$
+\end{algorithmic}
+\end{tcolorbox}
+
+\subsection{Weak Fiat-Shamir Schnorr (WFSSchnorr)}
+
+The weak variant omits the statement $X$ from the random oracle call.
+
+\begin{tcolorbox}[title={WFSSchnorr (weak / broken Fiat-Shamir)},
+                  colback=red!5, colframe=red!50!black]
+\textbf{\underline{WFSSchnorr.$\Pro^{\RO}(\G, G, p, X;\; x)$:}}
+\begin{algorithmic}[1]
+  \State $r \samplefrom \Z_p$;\quad $R \leftarrow rG$
+  \State $c \leftarrow \RO(R)$  \Comment{statement $X$ is \textbf{NOT} included}
+  \State $z \leftarrow r + cx$
+  \State Return $X, (R, z)$
+\end{algorithmic}
+
+\medskip
+\textbf{\underline{WFSSchnorr.$\Ver^{\RO}(\G, G, p, X, \pi)$:}}
+\begin{algorithmic}[1]
+  \State $R, z \leftarrow \pi$
+  \State $c \leftarrow \RO(R)$  \Comment{statement $X$ is \textbf{NOT} included}
+  \State Return $zG = R + cX$
+\end{algorithmic}
+\end{tcolorbox}
+
+\noindent The key difference (highlighted in the original slides with red boxes)
+is the argument to the random oracle:
+\begin{itemize}
+  \item \textbf{NISchnorr:} $c \leftarrow \RO(\G, G, p, X, R)$ --- correct.
+  \item \textbf{WFSSchnorr:} $c \leftarrow \RO(R)$ --- broken.
+\end{itemize}
+
+\subsection{Attack on Weak Fiat-Shamir}
+
+\begin{tcolorbox}[title={Attack on WFSSchnorr (forging a proof without knowing $x$)},
+                  colback=red!5, colframe=red!50!black]
+The following adversary $\Adv^{\RO}(\G, G, p)$ produces a convincing proof
+for a \emph{self-chosen} statement $X$ without knowing the discrete log:
+
+\medskip
+\textbf{\underline{$\Adv^{\RO}(\G, G, p)$:}}
+\begin{algorithmic}[1]
+  \State $R \samplefrom \G$;\quad $c \leftarrow \RO(R)$
+  \State $z \samplefrom \Z_p$
+  \State Return $X \leftarrow zc^{-1}G - c^{-1}R$, \quad $(R, z)$
+\end{algorithmic}
+\end{tcolorbox}
+
+\noindent\textbf{Verification check.}
+The verifier accepts because the returned $X$ is chosen so that the check
+$zG = R + cX$ holds by construction:
+\begin{align*}
+  zG &= R + cX \\
+  zG &= R + c(zc^{-1}G - c^{-1}R) \\
+  zG &= R + zG - R \\
+  zG &= zG. \quad\checkmark
+\end{align*}
+The adversary never queries the discrete log of $X$; it engineers the statement
+$X$ to satisfy the verification equation for an arbitrary commitment $R$ and
+response $z$.
+
+\begin{remark}
+Done this way (using weak Fiat-Shamir), non-interactive Schnorr lacks
+\emph{adaptive} knowledge soundness.  The attack exploits the fact that
+the adversary can choose both the statement $X$ and the proof $\pi$
+simultaneously, picking $X$ to ``fit'' a pre-chosen $(R, z)$.  Including $X$
+in the hash $\RO$ input prevents this because $X$ is fixed before the
+challenge $c$ is determined.
+\end{remark}
+
+\begin{remark}[Real-world relevance: Delphian attacks]
+This class of attack (weak Fiat-Shamir) is not merely theoretical.  The
+``Delphian'' attack framework shows that real deployed protocols using weak
+Fiat-Shamir can be exploited in practice.  The lesson is: \textbf{always
+include all public inputs (the statement) in the hash input when applying
+Fiat-Shamir}.
+\end{remark}
+
+%-----------------------------------------------------------------------
+\section{Zero Knowledge: Intuition}
+%-----------------------------------------------------------------------
+
+\subsection{The Big Picture: Toward zkSNARKs}
+
+So far in the course we have built up the following chain of transforms:
+\[
+  \underbrace{\text{PIOP}}_{\text{interactive}}
+  \;\xrightarrow{\text{PC}}\;
+  \underbrace{\text{Argument}}_{\text{interactive}}
+  \;\xrightarrow{\text{F-S}}\;
+  \underbrace{\text{NI-Arg / SNARK}}_{\text{non-interactive}}
+\]
+To reach a \textbf{zkSNARK} we need one more (third) protocol transform: adding
+\emph{zero knowledge}.
+
+\subsection{What Does Zero Knowledge Mean?}
+
+Intuitively, \textbf{zero knowledge (ZK)} means the \emph{witness is hidden}
+from the verifier.  More precisely:
+
+\begin{itemize}
+  \item The verifier $V$ learns \emph{nothing} about the witness $w$ beyond the
+        fact that $x \in \mathcal{L}$ (i.e., that some witness exists).
+  \item In the students' own words: $V$ cannot learn $f(w)$ for \emph{any}
+        function $f$.
+\end{itemize}
+
+\noindent The formal definition captures this via a \emph{simulator}: the
+verifier's view in the real interaction is indistinguishable from a simulated
+view produced without access to $w$.
+
+\subsection{Special Honest-Verifier Zero Knowledge (Special HVZK)}
+
+\begin{tcolorbox}[title={Definition: Special HVZK for Sigma Protocols},
+                  colback=blue!5, colframe=blue!40!black, breakable]
+\begin{definition}[Special Honest-Verifier Zero Knowledge]
+\label{def:shvzk}
+A sigma protocol $\mathrm{IP} = \langle \Pro, \Ver \rangle$ (with verification
+function $\verify$) for the language $\mathcal{L}$ is
+\emph{special honest-verifier zero-knowledge (special HVZK)} if there exists a
+probabilistic polynomial-time simulator $\Sim$ that takes parameters $\pp$,
+input $x$, and challenge $c \in \mathcal{C}$, and satisfies:
+
+\begin{enumerate}
+  \item For $\pp \samplefrom \mathsf{Setup}$ and all pairs $x, c$, the output
+        of $\Sim(\pp, x, c)$ is a proof $\pi = (R, z)$ such that
+        \[
+          \verify(\pp,\, x,\, R,\, c,\, z) = 1.
+        \]
+
+  \item For all $(x, w) \in \mathcal{R}_{\mathcal{L}}$, the transcript
+        $(R, c, z)$ computed as
+        \[
+          c \samplefrom \mathcal{C};\quad R, z \samplefrom \Sim(x, c)
+        \]
+        is \emph{identically distributed} to a real transcript of the
+        interaction $[\Pro(\pp, x, w) \leftrightarrow \Ver(\pp, x)]$.
+\end{enumerate}
+\end{definition}
+\end{tcolorbox}
+
+\noindent\textbf{Key points about the definition:}
+\begin{itemize}
+  \item The simulator $\Sim$ receives the challenge $c$ \emph{before} it must
+        commit to the first message $R$.  This is the ``special'' part of
+        special HVZK: the simulator gets to choose $R$ \emph{after} seeing $c$.
+        In a real interaction the prover must commit before the challenge is
+        sent.
+  \item The definition requires \emph{identical} distributions (not just
+        computational indistinguishability), which is sometimes called
+        \emph{perfect} HVZK.
+  \item ``Honest-verifier'' means the definition only guarantees ZK when the
+        verifier follows the protocol (sends a uniformly random $c \in
+        \mathcal{C}$).  Full (malicious-verifier) ZK requires a stronger
+        definition.
+\end{itemize}
+
+\subsection{Special HVZK for the Schnorr Protocol}
+
+\begin{theorem}[Special HVZK of Schnorr]
+\label{thm:schnorr-hvzk}
+The Schnorr protocol is special HVZK.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+\textbf{Simulator $\Sim(\pp, X, c)$:}
+\begin{enumerate}
+  \item Choose $z \samplefrom \Z_p$ uniformly at random.
+  \item Set $R \leftarrow zG - cX$.
+  \item Output $(R, z)$.
+\end{enumerate}
+
+\noindent\textbf{Correctness.}  The simulator's output satisfies the
+verification equation:
+\[
+  zG \stackrel{?}{=} R + cX = (zG - cX) + cX = zG. \quad\checkmark
+\]
+
+\noindent\textbf{Distribution.}  In a real transcript:
+\begin{itemize}
+  \item $r \samplefrom \Z_p$,\quad $R = rG$,\quad $c \samplefrom \Z_p$
+        (or $c \samplefrom \mathcal{C}$),\quad $z = r + cx$.
+\end{itemize}
+In the simulated transcript (with $c$ given as input):
+\begin{itemize}
+  \item $z \samplefrom \Z_p$,\quad $R = zG - cX$.
+\end{itemize}
+In both cases $z$ is uniformly distributed over $\Z_p$ (in the real case $z =
+r + cx$ is uniform because $r$ is fresh; in the simulated case $z$ is chosen
+uniformly).  Given $z$ and $c$, $R$ is uniquely determined in both cases
+($R = zG - cX$).  Hence the joint distributions of $(R, c, z)$ are identical.
+\end{proof}
+
+\begin{remark}
+  The ability of the simulator to choose $R$ \emph{after} seeing $c$ is
+  essential.  In the real protocol the prover must fix $R = rG$ before
+  seeing $c$, binding it to the randomness $r$.  The simulator avoids this
+  by working ``backwards'': it picks the response $z$ first, then derives
+  $R = zG - cX$ to make the equation hold.  This technique---choosing the
+  response before the commitment---is the standard HVZK simulation strategy
+  for linear sigma protocols.
+\end{remark}
+
+\subsection{Summary and Outlook}
+
+\begin{itemize}
+  \item We showed that \textbf{random oracles are collision-resistant} (with
+        advantage at most $q^2/2^n$ for $q$ queries).
+  \item We stated the \textbf{Fiat-Shamir security theorem}: if the underlying
+        interactive argument has state-restoration knowledge soundness, the F-S
+        compiled argument has adaptive NI knowledge soundness with the same
+        knowledge error.
+  \item We demonstrated \textbf{``weak'' Fiat-Shamir attacks}: omitting the
+        statement from the hash breaks security (adaptive knowledge soundness
+        fails), and a concrete forgery attack exists for weak NISchnorr.
+  \item We introduced the notion of \textbf{special HVZK} and proved the
+        Schnorr protocol satisfies it via an explicit simulator.
+  \item Next: we will make ZK formal and introduce the third protocol transform
+        (adding ZK) to the PIOP $\to$ Argument $\to$ NI-Arg pipeline, reaching
+        zkSNARKs.
+\end{itemize}
+
+\end{document}

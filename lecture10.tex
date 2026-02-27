@@ -1,0 +1,616 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 10: Sigma Protocols}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+\DeclareMathOperator{\ord}{ord}
+
+% Additional commands used in this lecture
+\newcommand{\G}{\mathbb{G}}
+\newcommand{\Zp}{\mathbb{Z}_p}
+\newcommand{\getsr}{\xleftarrow{\$}}
+\newcommand{\Adv}{\mathrm{Adv}}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  TITLE BLOCK
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026}\\[4pt]
+  {\large \textbf{Lecture 10: Sigma Protocols}}\\[4pt]
+  {\large Instructor: Paul Grubbs \quad \texttt{paulgrub@umich.edu} \quad Beyster 4709}
+\end{center}
+\hrule
+\vspace{1em}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  AGENDA
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section*{Agenda}
+\begin{itemize}
+  \item Announcements
+  \item Compiling PIOPs to arguments / Sigma protocols
+  \item Schnorr's protocol for discrete logarithms
+  \item Okamoto's protocol for Pedersen commitments
+  \item Other sigma protocols
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 1: ANNOUNCEMENTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Announcements}
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item Autograder is working.
+  \item Due date: 2/20.
+  \item \textcolor{blue}{PAG travelling} -- classes on 3/9 and 3/11 may be affected.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 2: COMPILING PIops TO ARGUMENTS / SIGMA PROTOCOLS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Compiling PIOPs to Arguments and Sigma Protocols}
+
+\subsection{The Oracle-to-PC Compiler}
+
+Recall from previous lectures that a \emph{Polynomial Interactive Oracle Proof} (PIOP) is a proof system in which the prover sends oracles to polynomials, and the verifier can query those oracles at chosen points. A polynomial commitment scheme (PC) replaces each oracle by a cryptographic commitment, turning an information-theoretic proof into an argument.
+
+The compilation works as follows (written in blue-ink annotations on the slide):
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black,
+                  title={Oracle-to-PC Compiler: $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$}]
+Let $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}}, \mathcal{V}_{\mathsf{PIOP}} \rangle$ be a PIOP and $\mathsf{PC} = (\mathsf{Setup}, \mathsf{Com}, \mathsf{Open})$ be a polynomial commitment scheme. The compiled argument $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ is defined as follows:
+
+\begin{enumerate}
+  \item \textbf{Commitment phase:} Whenever the PIOP prover $\mathcal{P}_{\mathsf{PIOP}}$ sends an oracle $p$, the argument prover $\mathsf{Arg}[\mathsf{PIOP},\mathsf{PC}].\mathcal{P}$ commits to $p$ using $\mathsf{PC}.\mathsf{Com}$, and sends the commitment $\mathsf{comm}$ to the verifier $\mathcal{V}$.
+  \item \textbf{Query/opening phase:} On a query $r$ to the oracle $p$ from $\mathcal{V}_{\mathsf{PIOP}}$, the argument parties $\mathsf{Arg}[\mathsf{PIOP},\mathsf{PC}].\mathcal{P}$ and $\mathcal{V}$ run $\mathsf{Open}(\mathsf{comm}, r, v)$ (i.e., the prover opens the commitment at point $r$ to value $v = p(r)$).
+  \item \textbf{Output:} The argument verifier outputs whatever the PIOP verifier $\mathcal{V}_{\mathsf{PIOP}}$ outputs.
+\end{enumerate}
+\end{tcolorbox}
+
+\subsection{Soundness of the Compiled Argument}
+
+\begin{claim}
+Let $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}}, \mathcal{V}_{\mathsf{PIOP}} \rangle$ be a polynomial interactive oracle proof for language $\mathcal{L}$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$. Let $\mathsf{PC} = (\mathsf{Setup}, \mathsf{Com}, \mathsf{Open})$ be a polynomial commitment scheme. Let $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ be the argument obtained from the ``oracle-to-PC'' compiler. If $\mathsf{PC.Com}$ is binding, $\mathsf{PC.Open}$ is a proof of knowledge, and $\mathsf{PIOP}$ is sound, then $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ is a sound argument for $\mathcal{L}$.
+\end{claim}
+
+\begin{remark}
+The claim (circled in blue on the slide) is the key theorem justifying the PIOP-to-argument compilation paradigm. Binding of the commitment ensures the cheating prover cannot open the same commitment to different values; the proof-of-knowledge property of $\mathsf{Open}$ ensures the prover actually knows the polynomial; and soundness of the PIOP carries over to soundness of the compiled argument.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 3: SIGMA PROTOCOLS -- DEFINITION
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Sigma Protocols ($\Sigma$-Protocols)}
+
+\subsection{Structure of a Sigma Protocol}
+
+A \emph{sigma protocol} (also written $\Sigma$-protocol) is a special class of 3-move interactive proof between a prover $P_{\mathsf{SP}}$ and a verifier $V_{\mathsf{SP}}$. The name comes from the shape of the flow diagram: the three messages form a ``$\Sigma$'' pattern.
+
+\medskip
+
+The three messages in a $\Sigma$-protocol are:
+\begin{enumerate}
+  \item $\alpha_1$ (also annotated $R$ in the slides): A \emph{commitment} sent from prover to verifier.
+  \item $\rho$ (also annotated $c$): A \emph{challenge} sent from verifier to prover. The verifier samples $c \getsr C$ (the challenge space $C$).
+  \item $\alpha_2$ (also annotated $z$): A \emph{response} sent from prover to verifier.
+\end{enumerate}
+
+The verifier then runs a deterministic check $\mathsf{Verify}(x, \alpha_1, \rho, \alpha_2) \to \{0,1\}$.
+
+\medskip
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=6pt, minimum width=3.2cm, minimum height=2.8cm,
+              font=\bfseries, align=center},
+  arr/.style={-{Stealth[length=7pt]}, thick},
+  node distance=5cm
+]
+  \node[box] (P) {$P_{\mathsf{SP}}(\mathbb{X}, \mathbb{W})$};
+  \node[box, right=of P] (V) {$V_{\mathsf{SP}}(\mathbb{X})$};
+
+  % Arrow 1: R (commitment)
+  \draw[arr] ([yshift=0.6cm]P.east)  -- node[above]{$\alpha_1$\;($R$)} ([yshift=0.6cm]V.west);
+  % Note on verifier side
+  \node[right=0.2cm of V, yshift=0.6cm, font=\small\itshape, text=blue] {$\rho \getsr C$};
+
+  % Arrow 2: c (challenge)
+  \draw[arr] ([yshift=0cm]V.west)    -- node[above]{$\rho$\;($c$)} ([yshift=0cm]P.east);
+
+  % Arrow 3: z (response)
+  \draw[arr] ([yshift=-0.6cm]P.east) -- node[above]{$\alpha_2$\;($z$)} ([yshift=-0.6cm]V.west);
+
+  % Verify note
+  \node[below=0.3cm of V, font=\small, align=left] {
+    $\mathsf{Verify}(x,\alpha_1,\rho,\alpha_2) \to \{0,1\}$
+  };
+\end{tikzpicture}
+\end{center}
+
+\begin{remark}
+The notation in the slides also identifies this structure with ``MA'' (Merlin-Arthur), referring to the two-party interactive model in complexity theory (``zig-zag'' pattern). In this analogy, Merlin (the prover) is computationally unbounded and Arthur (the verifier) is probabilistic polynomial time.
+\end{remark}
+
+\subsection{Security Definition: $k$-Special Soundness}
+
+\begin{tcolorbox}[colback=green!5!white, colframe=green!60!black,
+                  title={Definition: $k$-Special Soundness ($k$-SS)}]
+Let $\mathsf{SP} = \langle P, V \rangle$ be a $\Sigma$-protocol for relation $\mathcal{R}$.
+
+$\mathsf{SP}$ is \textbf{$k$-special sound} if there exists a deterministic polynomial-time extractor $\mathsf{Ext}$ such that:
+
+Whenever $\mathsf{Ext}$ is given as input:
+\begin{itemize}
+  \item An instance $x$, and
+  \item $k$ \emph{accepting} transcripts on the same first message $R$:
+    \[
+      (R,\, c_1,\, z_1),\quad (R,\, c_2,\, z_2),\quad \ldots,\quad (R,\, c_k,\, z_k)
+    \]
+    where the challenges $c_i$ are \emph{pairwise distinct},
+\end{itemize}
+$\mathsf{Ext}$ outputs a witness $w$ such that $(x, w) \in \mathcal{R}$.
+
+Formally:
+\[
+  \mathsf{Ext}\!\left(x,\; (R,c_1,z_1), \ldots, (R,c_k,z_k)\right) = w
+  \quad \text{s.t.} \quad (x,w) \in \mathcal{R}.
+\]
+\end{tcolorbox}
+
+\begin{remark}
+The slides note (boxed in blue) that $k$-special soundness implies \emph{special honest-verifier zero-knowledge} (special HVZK), which will be covered next week.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 4: SCHNORR'S PROTOCOL
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Schnorr's Protocol for Discrete Logarithms}
+
+\subsection{Setup and Relation}
+
+Let $\mathbb{G}$ be a cyclic group of prime order $p$ with generator $G$. Schnorr's protocol is a $\Sigma$-protocol for the discrete-logarithm relation:
+\[
+  \mathcal{R}_{\mathsf{DL}} = \bigl\{\,(X,\, x) \;\big|\; X = xG \;\text{ in } \mathbb{G}\,\bigr\}.
+\]
+The public input (statement) is $X \in \mathbb{G}$ and the private input (witness) is $x \in \Zp$ such that $X = xG$.
+
+\subsection{Protocol Description}
+
+\begin{tcolorbox}[colback=gray!8!white, colframe=black,
+                  title={Schnorr's Protocol}]
+
+\begin{center}
+\begin{tikzpicture}[
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  node distance=7cm
+]
+  \node[align=left, font=\small] (P) {
+    \underline{$\mathsf{Schnorr}[\mathcal{P}](\mathbb{G}, G, p, X;\, x)$}\\[4pt]
+    $r \getsr \Zp$\\
+    $R \leftarrow rG$
+  };
+  \node[align=right, font=\small, right=of P] (V) {
+    \underline{$\mathsf{Schnorr}[\mathcal{V}](\mathbb{G}, G, p, X)$}
+  };
+
+  % R arrow
+  \draw[arr] ([yshift=-1.2cm]P.east) -- node[above]{$R$} ([yshift=-1.2cm]V.west);
+
+  % c arrow
+  \node[align=right, font=\small, below=1.8cm of V] (Vsample) {$c \getsr \Zp$};
+  \draw[arr] ([yshift=-2.2cm]V.west) -- node[above]{$c$} ([yshift=-2.2cm]P.east);
+
+  % z computation and arrow
+  \node[align=left, font=\small, below=2.2cm of P] (Pz) {$z \leftarrow r + cx$};
+  \draw[arr] ([yshift=-3.2cm]P.east) -- node[above]{$z$} ([yshift=-3.2cm]V.west);
+
+  % Return
+  \node[align=right, font=\small, below=3.4cm of V] (Vcheck) {Return $zG = R + cX$};
+\end{tikzpicture}
+\end{center}
+
+\medskip
+\noindent\textbf{Summary of steps:}
+\begin{enumerate}
+  \item \textbf{Prover:} Sample $r \getsr \Zp$, compute $R \leftarrow rG$. Send $R$ to verifier.
+  \item \textbf{Verifier:} Sample challenge $c \getsr \Zp$. Send $c$ to prover.
+  \item \textbf{Prover:} Compute $z \leftarrow r + cx \pmod{p}$. Send $z$ to verifier.
+  \item \textbf{Verifier:} Accept if and only if $zG = R + cX$.
+\end{enumerate}
+\end{tcolorbox}
+
+\subsection{Correctness of the Verification Check}
+
+The verification equation $zG = R + cX$ holds for an honest prover because:
+\[
+  z = r + cx
+  \implies
+  zG = (r + cx)G = rG + c(xG) = R + cX.
+\]
+Here we use $X = xG$ (the defining relation) and the linearity of scalar multiplication in $\mathbb{G}$.
+
+\subsection{Completeness}
+
+\begin{proposition}[Completeness of Schnorr]
+If $(X, x) \in \mathcal{R}_{\mathsf{DL}}$ and the prover follows the protocol honestly, then the verifier always accepts.
+\end{proposition}
+
+\begin{proof}
+By the calculation above: $zG = (r + cx)G = rG + cxG = R + cX$.
+\end{proof}
+
+\subsection{2-Special Soundness of Schnorr}
+
+\begin{theorem}[2-Special Soundness of Schnorr]
+Schnorr's protocol is 2-special sound.
+\end{theorem}
+
+\begin{proof}
+Suppose the extractor $\mathsf{Ext}$ is given the public input $X$ (with group parameters $\mathbb{G}, G, p$) and two accepting transcripts on the same first message $R$ with distinct challenges:
+\[
+  (R,\, c_1,\, z_1) \quad \text{and} \quad (R,\, c_2,\, z_2), \quad c_1 \neq c_2.
+\]
+Both transcripts are accepting, so:
+\[
+  z_1 G = R + c_1 X \qquad \text{and} \qquad z_2 G = R + c_2 X.
+\]
+Subtracting the second equation from the first:
+\[
+  (z_1 - z_2)G = (c_1 - c_2)X.
+\]
+Since $c_1 \neq c_2$ and $p$ is prime, the scalar $(c_1 - c_2)$ is invertible in $\Zp$. Therefore:
+\[
+  \frac{z_1 - z_2}{c_1 - c_2} \cdot G = X.
+\]
+This gives a witness $w = \dfrac{z_1 - z_2}{c_1 - c_2} \pmod{p}$ satisfying $wG = X$, i.e., $(X, w) \in \mathcal{R}_{\mathsf{DL}}$.
+
+Hence Schnorr is 2-SS. \qquad (Annotated: ``Schnorr is 2-SS.'')
+\end{proof}
+
+\begin{remark}
+The slides present the 2-SS calculation explicitly:
+\[
+  \begin{cases} z_1 G = R + c_1 X \\ z_2 G = R + c_2 X \end{cases}
+  \;\Rightarrow\;
+  (z_1 - z_2)G = (c_1 - c_2)X
+  \;\Rightarrow\;
+  \frac{z_1 - z_2}{c_1 - c_2} G = X.
+\]
+The extracted witness is $x = \dfrac{z_1 - z_2}{c_1 - c_2}$.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 5: OKAMOTO'S PROTOCOL
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Okamoto's Protocol for Pedersen Commitments}
+
+\subsection{Setup and Relation}
+
+Let $\mathbb{G}$ be a cyclic group of prime order $p$ with two independent generators $G$ and $H$ (``independent'' meaning nobody knows $\log_G H$). A \emph{Pedersen commitment} to values $(a, b) \in \Zp^2$ is:
+\[
+  C = aG + bH.
+\]
+The commitment is perfectly hiding (because $b$ serves as a randomness blinder) and computationally binding (under the discrete logarithm assumption).
+
+The relation for Okamoto's protocol is:
+\[
+  \mathcal{R}_{\mathsf{Ped}} = \bigl\{\,(C,\; (a,b)) \;\big|\; C = aG + bH\;\text{ in }\mathbb{G}\,\bigr\}.
+\]
+
+\subsection{Protocol Description}
+
+\begin{tcolorbox}[colback=gray!8!white, colframe=black,
+                  title={Okamoto's Protocol}]
+
+\noindent The prover knows the opening $(a,b)$ of the commitment $C = aG + bH$. (Annotated at top of slide in blue: $C = aG + bH$.)
+
+\medskip
+\begin{center}
+\begin{tikzpicture}[
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  node distance=7cm
+]
+  \node[align=left, font=\small] (P) {
+    \underline{$\mathsf{Okamoto}[\mathcal{P}](\mathbb{G}, G, H, p, C;\; a, b)$}\\[4pt]
+    $\alpha, \beta \getsr \Zp$\\
+    $R \leftarrow \alpha G + \beta H$
+  };
+  \node[align=right, font=\small, right=of P] (V) {
+    \underline{$\mathsf{Okamoto}[\mathcal{V}](\mathbb{G}, G, H, p, C)$}
+  };
+
+  % R arrow
+  \draw[arr] ([yshift=-1.2cm]P.east) -- node[above]{$R$} ([yshift=-1.2cm]V.west);
+
+  % c arrow
+  \node[align=right, font=\small, below=1.8cm of V] (Vsample) {$c \getsr \Zp$};
+  \draw[arr] ([yshift=-2.2cm]V.west) -- node[above]{$c$} ([yshift=-2.2cm]P.east);
+
+  % z computation and arrow
+  \node[align=left, font=\small, below=2.2cm of P] (Pz) {
+    $z_a \leftarrow \alpha + ac$\\
+    $z_b \leftarrow \beta + bc$
+  };
+  \draw[arr] ([yshift=-3.5cm]P.east) -- node[above]{$z_a, z_b$} ([yshift=-3.5cm]V.west);
+
+  % Return
+  \node[align=right, font=\small, below=3.7cm of V] (Vcheck) {Return $z_a G + z_b H = R + cC$};
+\end{tikzpicture}
+\end{center}
+
+\medskip
+\noindent\textbf{Summary of steps:}
+\begin{enumerate}
+  \item \textbf{Prover:} Sample $\alpha, \beta \getsr \Zp$. Compute $R \leftarrow \alpha G + \beta H$. Send $R$.
+  \item \textbf{Verifier:} Sample $c \getsr \Zp$. Send $c$.
+  \item \textbf{Prover:} Compute $z_a \leftarrow \alpha + ac$ and $z_b \leftarrow \beta + bc$. Send $(z_a, z_b)$.
+  \item \textbf{Verifier:} Accept iff $z_a G + z_b H = R + cC$.
+\end{enumerate}
+\end{tcolorbox}
+
+\subsection{Completeness of Okamoto's Protocol}
+
+For an honest prover, the verification equation holds because:
+\[
+  z_a G + z_b H
+  = (\alpha + ac)G + (\beta + bc)H
+  = \alpha G + \beta H + c(aG + bH)
+  = R + cC.
+\]
+
+\subsection{2-Special Soundness of Okamoto's Protocol}
+
+\begin{theorem}[2-Special Soundness of Okamoto]
+Okamoto's protocol is 2-special sound (assuming the discrete logarithm of $H$ with respect to $G$ is unknown).
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Suppose the extractor is given two accepting transcripts on the same first message $R$ with distinct challenges $c_1 \neq c_2$:
+\[
+  (R,\, c_1,\, (z_{a,1},\, z_{b,1})) \quad \text{and} \quad (R,\, c_2,\, (z_{a,2},\, z_{b,2})).
+\]
+Both are accepting:
+\[
+  z_{a,1}G + z_{b,1}H = R + c_1 C
+  \qquad\text{and}\qquad
+  z_{a,2}G + z_{b,2}H = R + c_2 C.
+\]
+Subtracting:
+\[
+  (z_{a,1} - z_{a,2})G + (z_{b,1} - z_{b,2})H = (c_1 - c_2)C.
+\]
+Since $c_1 \neq c_2$, dividing through by $(c_1 - c_2)$:
+\[
+  \frac{z_{a,1} - z_{a,2}}{c_1 - c_2}\cdot G + \frac{z_{b,1} - z_{b,2}}{c_1 - c_2}\cdot H = C.
+\]
+Setting $a^* = \dfrac{z_{a,1} - z_{a,2}}{c_1 - c_2}$ and $b^* = \dfrac{z_{b,1} - z_{b,2}}{c_1 - c_2}$, we get $a^*G + b^*H = C$, i.e., the extractor outputs the witness $(a^*, b^*)$.
+\end{proof}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 6: OTHER SIGMA PROTOCOLS -- CHAUM-PEDERSEN
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Other Sigma Protocols: Chaum--Pedersen Protocol for DDH}
+
+\subsection{The DDH Relation and Problem}
+
+The \emph{Decisional Diffie--Hellman} (DDH) relation concerns triples $(A, B, C)$ in a group $\mathbb{G}$ that are \emph{Diffie--Hellman triples}: there exists a scalar $b$ such that $B = bG$ and $C = bA$.
+
+\begin{tcolorbox}[colback=yellow!8!white, colframe=orange!80!black,
+                  title={DDH Problem (game formulation)}]
+\begin{algorithmic}[1]
+  \Procedure{$\mathrm{DDH}_b^{\mathbb{G},G,p}(\mathcal{A})$}{}
+    \State $a, b, c \getsr \Zp$;\quad $A \leftarrow aG$;\quad $B \leftarrow bG$
+    \State $C_0 \leftarrow abG$;\quad $C_1 \leftarrow cG$
+    \State $b' \getsr \mathcal{A}(A, B, C_b, \mathbb{G}, G, p)$
+    \State \Return $b'$
+  \EndProcedure
+\end{algorithmic}
+\medskip
+The DDH advantage of adversary $\mathcal{A}$ is:
+\[
+  \mathrm{AdvDDH}^{\mathbb{G},G,p}(\mathcal{A})
+  = \Bigl|\Pr\bigl[\mathrm{DDH}_0^{\mathbb{G},G,p}(\mathcal{A})=1\bigr]
+    - \Pr\bigl[\mathrm{DDH}_1^{\mathbb{G},G,p}(\mathcal{A})=1\bigr]\Bigr|.
+\]
+When $b=0$ the challenge is a DH triple $(A,B,abG)$; when $b=1$ it is a random triple $(A,B,cG)$.
+\end{tcolorbox}
+
+\subsection{The Chaum--Pedersen Protocol}
+
+The Chaum--Pedersen protocol proves knowledge of a discrete logarithm $b$ such that $B = bG$ \emph{and} $C = bA$ simultaneously -- i.e., it proves that $(A,B,C)$ is a DH triple.
+
+\medskip
+The relation is (annotated in blue on the slide):
+\[
+  \mathcal{R} = \bigl\{\,(G, A, B, C;\; b) \;\big|\; B = bG \;\wedge\; C = bA\,\bigr\}.
+\]
+
+\begin{tcolorbox}[colback=gray!8!white, colframe=black,
+                  title={Chaum--Pedersen Protocol}]
+
+\begin{center}
+\begin{tikzpicture}[
+  arr/.style={-{Stealth[length=6pt]}, thick},
+  node distance=7.5cm
+]
+  \node[align=left, font=\small] (P) {
+    \underline{$\mathsf{ChPed}[\mathcal{P}](\mathbb{G}, G, A, B, C;\; b)$}\\[4pt]
+    $\beta \getsr \Zp$\\
+    $R_G \leftarrow \beta G$;\quad $R_A \leftarrow \beta A$
+  };
+  \node[align=right, font=\small, right=of P] (V) {
+    \underline{$\mathsf{ChPed}[\mathcal{V}](\mathbb{G}, G, A, B, C)$}
+  };
+
+  % R_G, R_A arrow
+  \draw[arr] ([yshift=-1.2cm]P.east) -- node[above]{$R_G,\, R_A$} ([yshift=-1.2cm]V.west);
+
+  % c sample and arrow
+  \node[align=right, font=\small, below=1.8cm of V] {$c \getsr \Zp$};
+  \draw[arr] ([yshift=-2.2cm]V.west) -- node[above]{$c$} ([yshift=-2.2cm]P.east);
+
+  % z computation and arrow
+  \node[align=left, font=\small, below=2.5cm of P] {$z \leftarrow \beta + cb$};
+  \draw[arr] ([yshift=-3.4cm]P.east) -- node[above]{$z$} ([yshift=-3.4cm]V.west);
+
+  % Return
+  \node[align=right, font=\small, below=3.4cm of V] {
+    Return $zG = R_G + cB$\\
+    $\wedge\; zA = R_A + cC$
+  };
+\end{tikzpicture}
+\end{center}
+
+\medskip
+\noindent\textbf{Summary of steps:}
+\begin{enumerate}
+  \item \textbf{Prover:} Sample $\beta \getsr \Zp$. Compute $R_G \leftarrow \beta G$ and $R_A \leftarrow \beta A$. Send $(R_G, R_A)$.
+  \item \textbf{Verifier:} Sample $c \getsr \Zp$. Send $c$.
+  \item \textbf{Prover:} Compute $z \leftarrow \beta + cb \pmod{p}$. Send $z$.
+  \item \textbf{Verifier:} Accept iff both:
+    \[
+      zG = R_G + cB \qquad \text{and} \qquad zA = R_A + cC.
+    \]
+\end{enumerate}
+\end{tcolorbox}
+
+\subsection{Completeness of Chaum--Pedersen}
+
+For an honest prover with $(b)$ such that $B = bG$ and $C = bA$:
+\[
+  zG = (\beta + cb)G = \beta G + c(bG) = R_G + cB,
+\]
+\[
+  zA = (\beta + cb)A = \beta A + c(bA) = R_A + cC.
+\]
+Both equations hold, so the verifier accepts.
+
+\subsection{2-Special Soundness of Chaum--Pedersen}
+
+\begin{theorem}[2-Special Soundness of Chaum--Pedersen]
+The Chaum--Pedersen protocol is 2-special sound.
+\end{theorem}
+
+\begin{proof}
+Given two accepting transcripts with the same $(R_G, R_A)$ and distinct challenges $c_1 \neq c_2$:
+\[
+  \bigl((R_G, R_A),\; c_1,\; z_1\bigr) \quad \text{and} \quad \bigl((R_G, R_A),\; c_2,\; z_2\bigr).
+\]
+Both are accepting:
+\[
+  z_1 G = R_G + c_1 B, \quad z_1 A = R_A + c_1 C,
+\]
+\[
+  z_2 G = R_G + c_2 B, \quad z_2 A = R_A + c_2 C.
+\]
+Subtracting corresponding equations:
+\[
+  (z_1 - z_2)G = (c_1 - c_2)B \quad \Longrightarrow \quad \frac{z_1 - z_2}{c_1 - c_2}\cdot G = B,
+\]
+\[
+  (z_1 - z_2)A = (c_1 - c_2)C \quad \Longrightarrow \quad \frac{z_1 - z_2}{c_1 - c_2}\cdot A = C.
+\]
+Setting $b^* = \dfrac{z_1 - z_2}{c_1 - c_2} \in \Zp$, we have $b^*G = B$ and $b^*A = C$. Hence $(G, A, B, C; b^*)$ satisfies the relation $\mathcal{R}$, and the extractor outputs $b^*$.
+\end{proof}
+
+\begin{remark}
+The slides present the 2-SS derivation for Chaum--Pedersen explicitly with the two systems of equations. Given two accepting transcripts $(R_G, R_A), c_1, z_1$ and $(R_G, R_A), c_2, z_2$ with $c_1 \neq c_2$:
+\[
+  \begin{cases}
+    z_1 G = R_G + c_1 B\\
+    z_1 A = R_A + c_1 C
+  \end{cases}
+  \quad\longleftrightarrow\quad
+  \begin{cases}
+    z_2 G = R_G + c_2 B\\
+    z_2 A = R_A + c_2 C
+  \end{cases}
+\]
+Subtracting yields:
+\[
+  \frac{z_1 - z_2}{c_1 - c_2} G = B \quad \text{and} \quad \frac{z_1 - z_2}{c_1 - c_2} A = C.
+\]
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  SECTION 7: SUMMARY AND CONNECTIONS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Summary and Key Takeaways}
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, title={Lecture Summary}]
+\begin{enumerate}
+  \item \textbf{PIOP-to-Argument Compilation.} The oracle-to-PC compiler converts any sound PIOP into a sound argument by replacing oracle queries with polynomial commitment openings. The key properties needed are: (i) $\mathsf{PC.Com}$ is binding, (ii) $\mathsf{PC.Open}$ is a proof of knowledge, (iii) the PIOP is sound.
+
+  \item \textbf{Sigma Protocols.} A $\Sigma$-protocol is a 3-move interactive proof with structure: commit ($\alpha_1$ / $R$), challenge ($\rho$ / $c$), respond ($\alpha_2$ / $z$). The verifier runs a deterministic check on the full transcript.
+
+  \item \textbf{$k$-Special Soundness.} The $\Sigma$-protocol security definition: given $k$ accepting transcripts sharing the same first message $R$ but with pairwise distinct challenges, a deterministic extractor can recover a valid witness. This implies knowledge soundness (soundness as a proof of knowledge).
+
+  \item \textbf{Schnorr's Protocol.} Proves knowledge of discrete log $x$ with $X = xG$.
+    \begin{itemize}
+      \item Prover sends $R = rG$; receives challenge $c$; responds with $z = r + cx$.
+      \item Verifier checks $zG = R + cX$.
+      \item 2-SS: from two transcripts, extract $x = \frac{z_1 - z_2}{c_1 - c_2}$.
+    \end{itemize}
+
+  \item \textbf{Okamoto's Protocol.} Proves knowledge of opening $(a,b)$ of Pedersen commitment $C = aG + bH$.
+    \begin{itemize}
+      \item Prover sends $R = \alpha G + \beta H$; receives $c$; responds with $z_a = \alpha + ac$, $z_b = \beta + bc$.
+      \item Verifier checks $z_a G + z_b H = R + cC$.
+      \item 2-SS: extract $(a^*, b^*) = \left(\frac{z_{a,1}-z_{a,2}}{c_1-c_2},\, \frac{z_{b,1}-z_{b,2}}{c_1-c_2}\right)$.
+    \end{itemize}
+
+  \item \textbf{Chaum--Pedersen Protocol.} Proves that $(A, B, C)$ is a DH triple, i.e., $\exists\, b: B = bG \wedge C = bA$.
+    \begin{itemize}
+      \item Prover sends $(R_G, R_A) = (\beta G, \beta A)$; receives $c$; responds with $z = \beta + cb$.
+      \item Verifier checks $zG = R_G + cB$ and $zA = R_A + cC$.
+      \item 2-SS: extract $b^* = \frac{z_1 - z_2}{c_1 - c_2}$ satisfying both $b^*G = B$ and $b^*A = C$.
+    \end{itemize}
+
+  \item \textbf{Looking Ahead.} Next week: special honest-verifier zero-knowledge (special HVZK) for $\Sigma$-protocols, and the Fiat--Shamir transformation to convert interactive $\Sigma$-protocols into non-interactive proofs.
+\end{enumerate}
+\end{tcolorbox}
+
+\end{document}

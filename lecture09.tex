@@ -1,0 +1,660 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 9: Delphian PIOP, Compiling to Arguments, Sigma Protocols}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{claim}[theorem]{Claim}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\F}{\mathbb{F}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Fp}{\mathbb{F}_p}
+
+% Additional useful macros
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calR}{\mathcal{R}}
+\newcommand{\bbF}{\mathbb{F}}
+\newcommand{\tildew}{\tilde{w}}
+\newcommand{\tildeq}{\tilde{\mathbf{eq}}}
+\newcommand{\tildeA}{\widetilde{A}}
+\newcommand{\tildeB}{\widetilde{B}}
+\newcommand{\tildeC}{\widetilde{C}}
+\newcommand{\tildez}{\tilde{z}}
+\newcommand{\tildex}{\tilde{x}}
+\newcommand{\tildeM}{\widetilde{M}}
+% \Pr is already defined by amsmath as \Pr
+\DeclareMathOperator{\ord}{ord}
+\DeclareMathOperator{\out}{out}
+\DeclareMathOperator{\Setup}{Setup}
+\DeclareMathOperator{\Com}{Com}
+\DeclareMathOperator{\Open}{Open}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\newtcolorbox{importantbox}{
+  colback=blue!5!white,
+  colframe=blue!60!black,
+  fonttitle=\bfseries,
+  title=Key Idea,
+  breakable
+}
+
+\newtcolorbox{definitionbox}[1][]{
+  colback=green!5!white,
+  colframe=green!50!black,
+  fonttitle=\bfseries,
+  title={Definition#1},
+  breakable
+}
+
+\newtcolorbox{theorembox}[1][]{
+  colback=orange!5!white,
+  colframe=orange!70!black,
+  fonttitle=\bfseries,
+  title={Theorem#1},
+  breakable
+}
+
+\newtcolorbox{claimbox}[1][]{
+  colback=purple!5!white,
+  colframe=purple!60!black,
+  fonttitle=\bfseries,
+  title={Claim#1},
+  breakable
+}
+
+\begin{document}
+
+%-----------------------------------------------------------------------
+% Title block
+%-----------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026 \quad --- \quad Lecture 9}\\[4pt]
+  {\large \textbf{Delphian PIOP, Soundness, Compiling to Arguments, and Sigma Protocols}}\\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+    \href{mailto:paulgrub@umich.edu}{\texttt{paulgrub@umich.edu}} \quad
+    Beyster 4709}
+\end{center}
+
+\hrule
+\vspace{10pt}
+
+%-----------------------------------------------------------------------
+% Agenda
+%-----------------------------------------------------------------------
+\section*{Agenda}
+\begin{enumerate}
+  \item Announcements
+  \item The Delphian PIOP for R1CS-Sat
+  \item Soundness of Delphian as a PIOP
+  \item Compiling (P)IOPs to arguments (of knowledge)
+  \item Sigma protocols
+\end{enumerate}
+
+\hrule
+\vspace{10pt}
+
+%-----------------------------------------------------------------------
+\section{Announcements}
+%-----------------------------------------------------------------------
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item Autograder is working.
+  \item Due date: 2/20.
+  \item How about that Super Bowl? I can't believe \$TEAM\_NAME won!
+\end{itemize}
+
+%-----------------------------------------------------------------------
+\section{The Delphian PIOP for R1CS-Sat}
+%-----------------------------------------------------------------------
+
+\subsection{Background and Setup}
+
+Recall that R1CS-Sat is the relation where, given matrices $A, B, C \in \F^{n \times n}$, a
+public input $x \in \F^{n/2}$, and a witness $w$, the prover claims that the combined vector
+$z = (x \| w)$ satisfies the Hadamard-product constraint
+\[
+  (Az) \circ (Bz) = Cz.
+\]
+Throughout, we write $n = 2^\ell$, so the Boolean hypercube indexing the rows and columns
+has dimension $\ell$.
+
+The multilinear extension of a vector $w \in \{0,1\}^n$ is denoted $\tildew$; it is the
+unique multilinear polynomial that agrees with $w$ on $\{0,1\}^\ell$.
+
+\medskip
+The verifier's key randomness for the first phase is a random point
+$r \leftarrow_\$ \F^{\log n}$ (i.e., $r \in \F^\ell$).  The verifier uses $r$ to reduce
+the matrix-level constraint to a single scalar via the \emph{residue polynomial}
+\[
+  g_{\mathrm{res}}(x)
+  =
+  \Bigl(\sum_{j} \tildeA(x,j)\,\tildez(j)\Bigr)
+  \Bigl(\sum_{j} \tildeB(x,j)\,\tildez(j)\Bigr)
+  -
+  \Bigl(\sum_{j} \tildeC(x,j)\,\tildez(j)\Bigr).
+\]
+Correctness of R1CS-Sat requires $g_{\mathrm{res}}(x) = 0$ for all $x \in \{0,1\}^\ell$.
+
+\begin{importantbox}
+  The equation $\sum_{x \in \{0,1\}^\ell} g_{\mathrm{res}}(x) = 0$ captures the full R1CS
+  constraint, because the residue polynomial vanishes on the hypercube if and only if the
+  Hadamard constraint holds.  The Delphian PIOP reduces this to a single evaluation using the
+  sumcheck protocol (SCPIOP) together with polynomial commitments.
+\end{importantbox}
+
+\subsection{First Phase of the Delphian PIOP}
+
+The first phase involves the prover $\mathcal{P}(A,B,C,x,w)$ and verifier
+$\mathcal{V}(A,B,C,x)$ executing the following steps.
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=3cm,
+    box/.style={draw, rounded corners, minimum width=3.2cm, minimum height=1.0cm,
+                align=center, font=\small},
+    arr/.style={-{Stealth[length=6pt]}, thick},
+  ]
+  \node[box] (P) {$\mathcal{P}(A,B,C,x,w)$};
+  \node[box, right=5.5cm of P] (V) {$\mathcal{V}(A,B,C,x)$};
+
+  % Arrow 1: oracle for w-tilde
+  \draw[arr] (P.east) -- node[above, font=\small]{$\mathcal{O}_{\tildew}$} (V.west);
+
+  % Arrow 2: challenge r
+  \draw[arr] ([yshift=-0.5cm]V.west) -- node[above, font=\small]{$r$}
+             ([yshift=-0.5cm]P.east);
+  \node[right=0.2cm of V, yshift=-0.5cm, font=\small, align=left]
+        {$r \leftarrow_\$ \F^{\log n}$};
+
+  % Arrow 3: oracle for h
+  \draw[arr] ([yshift=-1.2cm]P.east) -- node[above, font=\small]{$\mathcal{O}_h$}
+             ([yshift=-1.2cm]V.west);
+
+  % SCPIOP sub-protocol arrows (double)
+  \draw[arr] ([yshift=-2.0cm]V.west) --
+    node[above, font=\scriptsize]
+       {$\mathsf{SCPIOP}[\mathcal{P}_{sc}(h,0)\leftrightarrow
+         \mathcal{V}_{sc}^{\mathcal{O}_h}(0)]$}
+    ([yshift=-2.0cm]P.east);
+  \draw[arr] ([yshift=-2.6cm]P.east) --
+    node[above, font=\scriptsize]
+       {$\mathcal{V}_{sc} \to r' = (r'_1,\ldots,r'_{\log n}),\, H'$}
+    ([yshift=-2.6cm]V.west);
+
+  % Arrow 4: v_A, v_B, v_C, oracles
+  \draw[arr] ([yshift=-3.4cm]P.east) --
+    node[above, font=\scriptsize]
+       {$v_A, v_B, v_C,\, \mathcal{O}_{p_A}, \mathcal{O}_{p_B}, \mathcal{O}_{p_C}$}
+    ([yshift=-3.4cm]V.west);
+\end{tikzpicture}
+\end{center}
+
+Step by step:
+
+\begin{enumerate}
+  \item \textbf{Prover commits to $\tildew$.}  The prover computes the multilinear extension
+    $\tildew$ of the witness $w$ and sends oracle access $\mathcal{O}_{\tildew}$.
+
+  \item \textbf{Verifier samples $r$.}  The verifier draws a random challenge
+    $r \leftarrow_\$ \F^{\log n}$ and sends it to the prover.
+
+  \item \textbf{Prover defines $h$ and sends oracle $\mathcal{O}_h$.}  The prover computes
+    \[
+      h(x) = \tildeq(r, x)\, g_{\mathrm{res}}(x),
+    \]
+    and provides oracle access $\mathcal{O}_h$.  Here $\tildeq(r,x)$ is the multilinear
+    extension of the equality function $\mathrm{eq}(r,\cdot)$.
+
+    \begin{remark}
+      The handwritten annotation emphasizes that the key property needed is
+      \[
+        h(r'_1, \ldots, r'_{\log n}) = H',
+      \]
+      i.e., the oracle $\mathcal{O}_h$ must be consistent with the claimed sum $H'$
+      output by the sumcheck subprotocol.
+    \end{remark}
+
+  \item \textbf{Sumcheck subprotocol.}  The prover and verifier run
+    \[
+      \mathsf{SCPIOP}\bigl[\mathcal{P}_{sc}(h,0) \leftrightarrow
+      \mathcal{V}_{sc}^{\mathcal{O}_h}(0)\bigr],
+    \]
+    at the end of which the verifier learns
+    $r' = (r'_1, \ldots, r'_{\log n})$ and a claimed sum $H'$.
+
+  \item \textbf{Prover sends row-sum values and univariate oracles.}  For each
+    $M \in \{A, B, C\}$, the prover defines
+    \begin{align*}
+      p_M(x) &= \tilde{f}_M(r', x)\,\tildez(x), \\
+      v_M    &= \sum_{x \in \{0,1\}^{\log n}} p_M(x),
+    \end{align*}
+    and sends $v_A, v_B, v_C$ along with oracle access to $p_A, p_B, p_C$.
+
+  \item \textbf{Verifier checks.}  The verifier checks
+    \[
+      v_A \cdot v_B - v_C = G',
+    \]
+    where $G' = H' / e$ and $e = \tildeq(r, r')$.
+
+    Note: $G'$ is claimed to be $g_{\mathrm{res}}(r')$.  Under the correct derivation,
+    \[
+      h(x) = \tildeq(r, x)\, g_{\mathrm{res}}(x),
+    \]
+    so $\sum_x h(x) = 0$, and the sumcheck reduces to checking a single evaluation.
+\end{enumerate}
+
+\begin{remark}
+  The annotation in the top-right of the slide reminds us of the domain structure:
+  \[
+    \mathrm{eq} : \{0,1\}^{\log n} \times \{0,1\}^{\log n} \to \{0,1\}.
+  \]
+  The multilinear extension maps this to $\F^{\log n} \times \F^{\log n} \to \F$.
+\end{remark}
+
+\subsection{Second Phase of the Delphian PIOP}
+
+The second phase handles each matrix $M \in \{A, B, C\}$ separately.  The purpose is to
+confirm the claimed value $v_M$ is indeed $\sum_{x \in \{0,1\}^{\log n}} p_M(x)$.
+
+\medskip
+\noindent\textbf{Key relation (from annotations):}
+\[
+  p_M(r', y) := \tildeM(r', y)\,\tildez(y), \quad M \in \{A, B, C\}.
+\]
+The residue polynomial evaluated at $r'$ satisfies:
+\[
+  g_{\mathrm{res}}(r')
+  = \Bigl(\sum_y p_A(r',y)\Bigr)\Bigl(\sum_y p_B(r',y)\Bigr)
+    - \Bigl(\sum_y p_C(r',y)\Bigr),
+\]
+which matches the verifier's check $v_A \cdot v_B - v_C = G'$.
+
+\bigskip
+\noindent For each $M \in \{A, B, C\}$, the following steps are repeated:
+
+\begin{enumerate}
+  \item \textbf{Sumcheck for $p_M$.}  Run
+    \[
+      \mathsf{SCPIOP}\bigl[\mathcal{P}_{sc}(p_M, v_M)
+      \leftrightarrow \mathcal{V}_{sc}^{\mathcal{O}_{p_M}}(v_M)\bigr].
+    \]
+    The verifier receives
+    $r''_M = (r''_{M,1}, \ldots, r''_{M,\log n})$ and a claimed value $H''$.
+
+  \item \textbf{Query $\mathcal{O}_{\tildew}$ at the boundary point.}  The verifier queries
+    \[
+      \mathcal{O}_{\tildew}(r''_M[:-1]),
+    \]
+    i.e., the oracle for $\tildew$ evaluated at all but the last coordinate of $r''_M$.
+    The verifier receives $w_M \leftarrow \tildew(r''_M[:-1])$.
+
+  \item \textbf{Final verification for $M$.}  The verifier computes:
+    \begin{align*}
+      z_M   &= (1 - r''_M[-1])\,\tildex(r''_M[:-1]) + r''_M[-1]\, w_M, \\
+      e_M   &= \tilde{f}_M(r', r''_M)\, z_M, \\
+    \end{align*}
+    and checks $H'' = e_M$.
+\end{enumerate}
+
+\begin{importantbox}
+  \textbf{Intuition for $z_M$:} The vector $z = (x \| w)$ has multilinear extension
+  \[
+    \tilde{z}(y_1, \ldots, y_\ell)
+    = (1 - y_\ell)\,\tildex(y_1,\ldots,y_{\ell-1})
+      + y_\ell\,\tildew(y_1,\ldots,y_{\ell-1}).
+  \]
+  Setting $n = 2^\ell$, the first half of $z$ is $x$ and the second half is $w$, so the
+  last bit $y_\ell$ selects between $x$ and $w$.  This is captured by the annotation:
+  \[
+    \tilde{z}(y_1,\ldots,y_\ell)
+    = (1-y_\ell)\,\tildex(y_1,\ldots,y_{\ell-1})
+      + y_\ell\,\tildew(y_1,\ldots,y_{\ell-1}).
+  \]
+  Also from the annotation: $p_M(r''_M) = \widehat{M}(r', r''_M)\,\tilde{z}(r''_M)$.
+\end{importantbox}
+
+\medskip
+\noindent\textbf{Final checks.}  After all three sumcheck sub-protocols (for $A$, $B$, $C$)
+complete, the verifier outputs $\top$ (accept) if all sub-protocol outputs and intermediate
+checks pass; otherwise it outputs $\perp$ (reject).
+
+%-----------------------------------------------------------------------
+\section{Soundness of the Delphian PIOP}
+%-----------------------------------------------------------------------
+
+\begin{theorembox}[: Soundness of Delphian PIOP]
+  \textbf{Theorem 2.}  Let $n = 2^\ell$ and $A, B, C \in \F^{n \times n}$ be an R1CS over
+  $\F$, and take $x \in \F^{n/2} \notin \mathcal{L}_{A,B,C,n,\F}$.  Let $\mathbb{V}_D$ be
+  the Delphian PIOP verifier.  For any malicious PIOP prover $\mathbb{P}^*$,
+  \[
+    \Pr\bigl[\out_{\mathbb{V}_D}[\mathbb{P}^*(A,B,C,n,x)
+    \leftrightarrow \mathbb{V}_D(A,B,C,x)] = 1\bigr]
+    \;\leq\; \frac{10\ell}{|\F|}.
+  \]
+\end{theorembox}
+
+\subsection{Proof Sketch}
+
+The proof proceeds in two main parts, using the following tools:
+\begin{itemize}
+  \item Checking $\tilde{V}$-values using $\Sigma h$.
+  \item Sumcheck security.
+  \item The PIOP model (oracle restrictions).
+\end{itemize}
+
+\medskip
+\noindent\textbf{Step 1: First phase soundness.}
+
+Since $x \notin \mathcal{L}$, no matter what oracle $\mathbb{P}^*$ provides,
+\[
+  g_{\mathrm{res}}(x) \neq 0,
+\]
+and therefore
+\[
+  \Pr\Bigl[\sum_x h = 0\Bigr] \leq \frac{\ell}{|\F|}.
+\]
+To pass the first phase, the malicious prover $\mathbb{P}^*$ must break the soundness of
+the sumcheck sub-protocol (SCPIOP).  More precisely:
+\[
+  \Pr\bigl[\out_{\mathbb{V}_{sc}}[\mathbb{P}^* \leftrightarrow \mathbb{V}_{sc}]
+  \text{ is true claim about }h\bigr]
+  \leq \frac{2\ell}{|\F|}.
+\]
+If $h(r') \neq H'$ for the value $H'$ claimed after the sumcheck, then at least one of
+$v_A, v_B, v_C$ must be wrong (by PIOP construction and oracle restrictions).
+
+\medskip
+\noindent\textbf{Step 2: Second phase soundness.}
+
+In the second phase, for each $M \in \{A, B, C\}$, the prover must pass a sumcheck for
+$p_M$.  Define the evaluation:
+\[
+  p_M(r''_M) = \widehat{M}(r', r''_M)\,\tilde{z}(r''_M).
+\]
+
+\begin{claimbox}
+  If $p_M(r''_M) \neq H''_M$ for some $M$, then $\mathbb{P}^*$ cannot pass the
+  corresponding sumcheck by construction and PIOP oracle restrictions.
+\end{claimbox}
+
+The soundness error contributions from phases 1 and 2 are combined using the union bound:
+\[
+  \Pr[\text{cheat in phase 1 or phase 2}]
+  \leq \frac{2\ell}{|\F|} + \frac{2\ell}{|\F|} \cdot 3
+  \;\leq\; \frac{10\ell}{|\F|}.
+\]
+(The factor of 3 accounts for the three matrices $A$, $B$, $C$ in the second phase.)
+
+\hfill $\square$
+
+\subsection{Pop Quiz: Why is $v_A v_B - v_C = G'$ Important?}
+
+\begin{tcolorbox}[colback=yellow!10, colframe=black!40, title=Pop Quiz]
+  At the end of the first phase, the verifier checks that $v_A v_B - v_C = G'$.
+  Why is this check important? Explain in your own words.
+
+  \medskip
+  \textbf{Exercise:} Construct a cheating prover that breaks soundness with high
+  probability if the verifier does not do this check.
+\end{tcolorbox}
+
+\medskip
+\noindent\textbf{Answer (discussion):}  The value $G'$ is the (claimed) evaluation of the
+residue polynomial $g_{\mathrm{res}}(r')$.  If we did not enforce $v_A v_B - v_C = G'$,
+then a cheating prover could provide values $v_A, v_B, v_C$ that are individually
+consistent with the sumcheck sub-protocols for $p_A, p_B, p_C$, yet satisfy
+$v_A v_B - v_C \neq G'$.  This would allow the prover to convince the verifier of a false
+R1CS statement, breaking soundness.  The check ties the three independent sumchecks
+together so that the product structure of the Hadamard constraint is enforced.
+
+%-----------------------------------------------------------------------
+\section{Knowledge Soundness}
+%-----------------------------------------------------------------------
+
+\begin{importantbox}
+  \textbf{Soundness $\neq$ Knowledge Soundness.}
+
+  Soundness says: if $x \notin \mathcal{L}$, no cheating prover convinces the verifier
+  except with small probability.
+
+  \textbf{Knowledge soundness} is a strictly stronger notion.  Informally:
+  if a prover $\mathbb{P}$ convinces the verifier with probability $\varepsilon$, then there
+  exists an extractor $E$ that can interact with $\mathbb{P}$ (as a black box) to obtain a
+  valid witness $w$, also with probability ``almost $\varepsilon$''.
+\end{importantbox}
+
+\subsection{Formal Definition}
+
+\begin{definitionbox}[: Proof of Knowledge]
+  \textbf{Definition.}  An interactive proof $\mathsf{IP} = \langle \mathcal{P}, \mathcal{V} \rangle$
+  for the language $\mathcal{L}$ is a \emph{proof of knowledge} for $\mathcal{L}$ with
+  \emph{knowledge error} $\kappa$ if there exists an expected PPT extractor $E$ such that
+  for any prover $\mathcal{P}^*$ and any $x \in \mathcal{L}$,
+  \[
+    \Pr\bigl[E^{\mathcal{P}^*}(x) \in \mathcal{R}_{\mathcal{L}}(x)\bigr]
+    \;\geq\;
+    \Pr\bigl[\out_{\mathcal{V}}[\mathcal{P}^*(x) \leftrightarrow \mathcal{V}(x)] = 1\bigr]
+    \;-\; \kappa.
+  \]
+\end{definitionbox}
+
+\medskip
+Here, $\mathcal{R}_\mathcal{L}(x)$ denotes the set of valid witnesses for statement $x$,
+and $E^{\mathcal{P}^*}$ means the extractor $E$ has oracle (black-box) access to the
+prover $\mathcal{P}^*$.  The extractor is allowed to \emph{rewind} $\mathcal{P}^*$ and
+run it multiple times with different challenges.
+
+\begin{remark}
+  Formalizing knowledge soundness in full generality is quite difficult---one could
+  spend an entire semester studying just this question.  In practice, many ZK proof
+  systems achieve knowledge soundness via rewinding arguments (for public-coin protocols)
+  or algebraic extractors (for polynomial commitment--based arguments).
+\end{remark}
+
+%-----------------------------------------------------------------------
+\section{Compiling (P)IOPs to Arguments (of Knowledge)}
+%-----------------------------------------------------------------------
+
+The ``oracle-to-PC'' (polynomial commitment) compiler transforms a Polynomial IOP (PIOP)
+into a concrete interactive argument by replacing oracle access to polynomials with
+polynomial commitment scheme evaluations.
+
+\begin{tcolorbox}[colback=gray!5, colframe=gray!50, title=Setup]
+  \begin{itemize}
+    \item $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}}, \mathcal{V}_{\mathsf{PIOP}} \rangle$:
+      a polynomial interactive oracle proof for $\mathcal{L}$ with degree and variable
+      bounds $(d_1, v_1), \ldots, (d_k, v_k)$.
+    \item $\mathsf{PC} = (\Setup, \Com, \Open)$: a polynomial commitment scheme.
+    \item $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$: the argument obtained from the
+      oracle-to-PC compiler applied to the PIOP using the commitment scheme PC.
+  \end{itemize}
+\end{tcolorbox}
+
+\begin{claimbox}[: PIOP Compilation]
+  \textbf{Claim.}  Let $\mathsf{PIOP} = \langle \mathcal{P}_{\mathsf{PIOP}},
+  \mathcal{V}_{\mathsf{PIOP}} \rangle$ be a polynomial interactive oracle proof for
+  $\mathcal{L}$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$.  Let
+  $\mathsf{PC} = (\Setup, \Com, \Open)$ be a polynomial commitment scheme.  Let
+  $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ be the argument obtained from the
+  ``oracle-to-PC'' compiler.  If $\mathsf{PC}.\Com$ is \emph{binding}, $\mathsf{PC}.\Open$
+  is a \emph{proof of knowledge}, and $\mathsf{PIOP}$ is \emph{sound}, then
+  $\mathsf{Arg}[\mathsf{PIOP}, \mathsf{PC}]$ is a \emph{sound argument} for $\mathcal{L}$.
+\end{claimbox}
+
+\medskip
+\noindent\textbf{Interpretation.}  The compiler replaces each oracle query
+$\mathcal{O}_{f_i}(z)$ in the PIOP (``what is $f_i(z)$?'') with:
+\begin{enumerate}
+  \item A commitment $c_i \leftarrow \Com(f_i)$ sent in advance.
+  \item An opening proof $\pi_i \leftarrow \Open(f_i, z)$ together with the claimed value
+    $v_i = f_i(z)$, verified by the verifier using $c_i$.
+\end{enumerate}
+If the commitment is binding, then the prover is ``locked in'' to a specific polynomial
+$f_i$ once the commitment $c_i$ is sent.  If the opening proof is a proof of knowledge,
+the verifier can be assured the prover knows a polynomial consistent with the commitment
+and the claimed evaluation.  Combining these two properties with PIOP soundness gives
+soundness of the compiled argument.
+
+%-----------------------------------------------------------------------
+\section{Sigma Protocols}
+%-----------------------------------------------------------------------
+
+\subsection{Definition and Structure}
+
+A \emph{Sigma protocol} is a special type of interactive proof (or argument) with a
+specific 3-message structure.  The name comes from the Greek letter $\Sigma$, which
+visually resembles the flow of messages: commit ($\alpha_1$), challenge ($\rho$),
+response ($\alpha_2$).
+
+\begin{center}
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners=6pt, minimum width=3.2cm, minimum height=2.5cm,
+                align=center, font=\bfseries\large},
+    arr/.style={-{Stealth[length=7pt]}, very thick},
+    label/.style={font=\large},
+  ]
+  \node[box] (P) {$\mathbf{P}_{\mathrm{SP}}(\mathbb{x}, \mathbb{w})$};
+  \node[box, right=5cm of P] (V) {$\mathbf{V}_{\mathrm{SP}}(\mathbb{x})$};
+
+  % Arrow 1: alpha_1 (commitment)
+  \draw[arr] ([yshift=0.6cm]P.east) --
+    node[above, label]{$\alpha_1$}
+    ([yshift=0.6cm]V.west);
+
+  % Arrow 2: rho (challenge)
+  \draw[arr] ([yshift=0.0cm]V.west) --
+    node[above, label]{$\rho$}
+    ([yshift=0.0cm]P.east);
+
+  % Arrow 3: alpha_2 (response)
+  \draw[arr] ([yshift=-0.6cm]P.east) --
+    node[above, label]{$\alpha_2$}
+    ([yshift=-0.6cm]V.west);
+\end{tikzpicture}
+\end{center}
+
+\begin{definitionbox}[: Sigma Protocol Structure]
+  A \textbf{Sigma protocol} for a relation $\mathcal{R}$ consists of a prover
+  $\mathbf{P}_{\mathrm{SP}}(\mathbb{x}, \mathbb{w})$ (holding statement $\mathbb{x}$ and
+  witness $\mathbb{w}$) and a verifier $\mathbf{V}_{\mathrm{SP}}(\mathbb{x})$
+  (holding only the statement $\mathbb{x}$), executing exactly three messages:
+  \begin{enumerate}
+    \item \textbf{Commit / announcement} $\alpha_1$: The prover sends a first message
+      (commitment or announcement) $\alpha_1$.
+    \item \textbf{Challenge} $\rho$: The verifier samples a uniformly random challenge
+      $\rho$ from a challenge space and sends it to the prover.
+    \item \textbf{Response} $\alpha_2$: The prover sends a response $\alpha_2$.
+  \end{enumerate}
+  The verifier then decides to accept or reject based on $(\mathbb{x}, \alpha_1, \rho,
+  \alpha_2)$.
+\end{definitionbox}
+
+\begin{remark}
+  Sigma protocols are a cornerstone of practical zero-knowledge proof systems.  They are
+  used directly (e.g., Schnorr protocol for discrete logarithm) and as building blocks for
+  more complex systems.  Key properties typically required:
+  \begin{itemize}
+    \item \textbf{Completeness:} An honest prover with a valid witness always convinces
+      the verifier.
+    \item \textbf{Special soundness:} Given two accepting transcripts
+      $(\alpha_1, \rho, \alpha_2)$ and $(\alpha_1, \rho', \alpha_2')$ with the same
+      first message $\alpha_1$ but different challenges $\rho \neq \rho'$, one can
+      efficiently extract a witness $\mathbb{w}$.
+    \item \textbf{Honest-verifier zero-knowledge (HVZK):} There exists a simulator that,
+      given only $\mathbb{x}$, produces a transcript $({\alpha_1, \rho, \alpha_2})$
+      distributed identically to a real transcript (when the verifier is honest).
+  \end{itemize}
+\end{remark}
+
+\subsection{Connection to the Broader Framework}
+
+Sigma protocols fit naturally into the PIOP compilation framework:
+\begin{itemize}
+  \item A Sigma protocol is a 3-message public-coin interactive proof.
+  \item Applying the Fiat--Shamir transform (using a random oracle) makes the challenge
+    non-interactive, yielding a \emph{non-interactive argument in the random oracle model}.
+  \item Sigma protocols with special soundness are proofs of knowledge (with knowledge
+    error $1/|\text{challenge space}|$).
+\end{itemize}
+
+Sigma protocols will be studied in more detail in subsequent lectures, including specific
+constructions (Schnorr, Pedersen commitment openings) and composition techniques
+(AND/OR proofs).
+
+%-----------------------------------------------------------------------
+\appendix
+\section*{Summary of Notation}
+%-----------------------------------------------------------------------
+
+\begin{center}
+\begin{tabular}{ll}
+  \hline
+  \textbf{Symbol} & \textbf{Meaning} \\
+  \hline
+  $n = 2^\ell$ & dimension of R1CS matrices \\
+  $A, B, C \in \F^{n\times n}$ & R1CS constraint matrices \\
+  $x \in \F^{n/2}$ & public input \\
+  $w \in \F^{n/2}$ & witness (private input) \\
+  $z = (x \| w)$ & combined vector \\
+  $\tildew$ & multilinear extension of $w$ \\
+  $\tildez$ & multilinear extension of $z$ \\
+  $\tildex$ & multilinear extension of $x$ \\
+  $\tildeM$ & multilinear extension of matrix $M$ \\
+  $\tildeq(r, x)$ & multilinear extension of $\mathrm{eq}(r, \cdot)$ \\
+  $g_{\mathrm{res}}(x)$ & residue polynomial for R1CS \\
+  $h(x) = \tildeq(r,x)\,g_{\mathrm{res}}(x)$ & sumcheck input polynomial \\
+  $r \in \F^{\log n}$ & random verifier challenge (phase 1) \\
+  $r' \in \F^{\log n}$ & sumcheck output randomness (phase 1) \\
+  $r''_M \in \F^{\log n}$ & sumcheck output randomness for $M$ (phase 2) \\
+  $H'$ & claimed sum from phase-1 sumcheck \\
+  $H''$ & claimed sum from phase-2 sumcheck \\
+  $v_M$ & claimed $\sum_x p_M(x)$ \\
+  $p_M(x) = \tilde{f}_M(r',x)\,\tildez(x)$ & univariate for matrix $M$ \\
+  $G' = H'/e$, $e = \tildeq(r,r')$ & claimed $g_{\mathrm{res}}(r')$ \\
+  $\mathsf{SCPIOP}$ & sumcheck polynomial IOP sub-protocol \\
+  $\mathsf{PIOP}$ & polynomial interactive oracle proof \\
+  $\mathsf{PC} = (\Setup, \Com, \Open)$ & polynomial commitment scheme \\
+  $\kappa$ & knowledge error \\
+  $E^{\mathcal{P}^*}$ & extractor with oracle access to prover \\
+  $\alpha_1, \rho, \alpha_2$ & Sigma protocol messages \\
+  \hline
+\end{tabular}
+\end{center}
+
+\end{document}
