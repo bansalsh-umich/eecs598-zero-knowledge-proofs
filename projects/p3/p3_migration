@@ -1,0 +1,405 @@
+#!/usr/bin/env python3
+"""
+Patch a student's p1 and p2 repos so p3 can build.
+
+Usage: python3 prepare_for_p3.py <root_dir>
+  where <root_dir> contains p1/, p2/, and p3/ directories.
+
+Changes made:
+  p1:
+    - Adds the FromBytes trait + impls (u8, [T;N], Zq<Q>) if not already present
+    - Adds FromBytes as a supertrait of Field
+    - Adds Serialize/Deserialize derives to P256Point (and serde import + #[serde(skip)] on _priv)
+    - Adds Default to PrivateZST derive if missing
+    - Ensures serde with "derive" feature is in Cargo.toml
+  p2:
+    - Adds Serialize + DeserializeOwned + Sum as supertraits of EllipticCurve
+    - Adds serde use import to ec.rs
+    - Adds Serialize/Deserialize to SparseMatrix and SparseVector
+    - Adds serde dependency to Cargo.toml
+"""
+
+import difflib
+import re
+import os
+import shutil
+import sys
+
+# ANSI color codes
+RED = "\033[31m"
+GREEN = "\033[32m"
+CYAN = "\033[36m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def read(path):
+    with open(path) as f:
+        return f.read()
+
+
+def show_diff(old, new, path):
+    """Print a colored unified diff to stdout."""
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    diff = difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, n=2)
+    for line in diff:
+        if line.startswith("---") or line.startswith("+++"):
+            sys.stdout.write(f"{CYAN}{line}{RESET}")
+        elif line.startswith("@@"):
+            sys.stdout.write(f"{DIM}{line}{RESET}")
+        elif line.startswith("+"):
+            sys.stdout.write(f"{GREEN}{line}{RESET}")
+        elif line.startswith("-"):
+            sys.stdout.write(f"{RED}{line}{RESET}")
+        else:
+            sys.stdout.write(line)
+    # Ensure trailing newline after diff block
+    if diff:
+        sys.stdout.write("\n")
+
+
+def patch(path, old, new):
+    """Write new content to path and print a diff. Returns True if changed."""
+    if old == new:
+        return False
+    rel = os.path.relpath(path)
+    show_diff(old, new, rel)
+    with open(path, "w") as f:
+        f.write(new)
+    return True
+
+
+def copytree_exclude_target(src, dst):
+    """Copy a directory tree, skipping any 'target' subdirectories."""
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns("target"),
+    )
+
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <root_dir>")
+        print("  <root_dir> should contain p1/, p2/, and p3/ subdirectories")
+        sys.exit(1)
+
+    root = sys.argv[1]
+    p1 = os.path.join(root, "p1")
+    p2 = os.path.join(root, "p2")
+
+    if not os.path.isdir(os.path.join(p1, "src")):
+        print(f"Error: {p1}/src does not exist", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isdir(os.path.join(p2, "src")):
+        print(f"Error: {p2}/src does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    # =========================================================================
+    # Backup
+    # =========================================================================
+    backup_dir = os.path.join(root, "p3_migration_backup")
+    if os.path.exists(backup_dir):
+        print(f"Backup directory already exists: {backup_dir}")
+        print("  Remove it manually if you want to re-run the migration.")
+        sys.exit(1)
+
+    print(f"Backing up p1/ and p2/ to {backup_dir}/")
+    os.makedirs(backup_dir)
+    copytree_exclude_target(p1, os.path.join(backup_dir, "p1"))
+    copytree_exclude_target(p2, os.path.join(backup_dir, "p2"))
+
+    # =========================================================================
+    # p1/src/lib.rs
+    # =========================================================================
+    print("\n=== Patching p1 ===")
+    lib_path = os.path.join(p1, "src", "lib.rs")
+    lib_orig = read(lib_path)
+    lib = lib_orig
+
+    # 1. Add FromBytes trait + impls if not present
+    if "pub trait FromBytes" not in lib:
+        lib += """
+pub trait FromBytes: Sized {
+    const BYTES_NEEDED: usize;
+    fn from_bytes(bytes: &[u8]) -> Self;
+}
+
+impl FromBytes for u8 {
+    const BYTES_NEEDED: usize = 1;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0]
+    }
+}
+
+impl<const N: usize, T: FromBytes + std::fmt::Debug> FromBytes for [T; N] {
+    const BYTES_NEEDED: usize = N * T::BYTES_NEEDED;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), Self::BYTES_NEEDED);
+        bytes
+            .chunks(T::BYTES_NEEDED)
+            .map(|chunk| T::from_bytes(chunk))
+            .collect::<Vec<T>>()
+            .try_into()
+            .unwrap()
+    }
+}
+"""
+
+    # 2. Add FromBytes as supertrait of Field
+    field_match = re.search(
+        r"(pub trait Field:.*?)(^\{)", lib, re.DOTALL | re.MULTILINE
+    )
+    if field_match and "FromBytes" not in field_match.group(0):
+        lib = lib[: field_match.end(1)] + "    + FromBytes\n" + lib[field_match.start(2) :]
+
+    if patch(lib_path, lib_orig, lib):
+        print("  Patched lib.rs (FromBytes trait + Field supertrait)")
+    else:
+        print("  lib.rs already up to date, skipping")
+
+    # =========================================================================
+    # p1/src/curve.rs
+    # =========================================================================
+    curve_path = os.path.join(p1, "src", "curve.rs")
+    curve_orig = read(curve_path)
+    curve = curve_orig
+
+    if "Serialize" not in curve:
+        # Add serde import after num_traits import
+        if "use serde" not in curve:
+            curve = curve.replace(
+                "use num_traits::Zero;",
+                "use num_traits::Zero;\nuse serde::{Deserialize, Serialize};",
+            )
+
+        # Add FromBytes import
+        if "FromBytes" not in curve:
+            # Multi-item crate import block: use crate::{\n    ...\n};
+            crate_import = re.search(r"use crate::\{.*?\n\};", curve, re.DOTALL)
+            if crate_import:
+                old_import = crate_import.group(0)
+                new_import = old_import.replace(
+                    "use crate::{", "use crate::{\n    FromBytes,", 1
+                )
+                curve = curve.replace(old_import, new_import)
+            elif "use crate::" in curve:
+                curve = re.sub(
+                    r"(use crate::[^\n]+\n)",
+                    r"\1use crate::FromBytes;\n",
+                    curve,
+                    count=1,
+                )
+            else:
+                curve = curve.replace(
+                    "use serde::{Deserialize, Serialize};",
+                    "use serde::{Deserialize, Serialize};\nuse crate::FromBytes;",
+                )
+
+        # Add Default to PrivateZST derive if missing
+        priv_zst = re.search(r"#\[derive\(([^)]*)\)\]\nstruct PrivateZST", curve)
+        if priv_zst and "Default" not in priv_zst.group(1):
+            old = priv_zst.group(0)
+            new = old.replace(
+                "derive(" + priv_zst.group(1) + ")",
+                "derive(" + priv_zst.group(1) + ", Default)",
+            )
+            curve = curve.replace(old, new)
+
+        # Add Serialize, Deserialize to P256Point derive
+        p256_derive = re.search(
+            r"#\[derive\(([^)]*)\)\]\npub enum P256Point", curve
+        )
+        if p256_derive and "Serialize" not in p256_derive.group(1):
+            old = p256_derive.group(0)
+            new = old.replace(
+                "derive(" + p256_derive.group(1) + ")",
+                "derive(" + p256_derive.group(1) + ", Serialize, Deserialize)",
+            )
+            curve = curve.replace(old, new)
+
+        # Add #[serde(skip)] to _priv field in the enum definition ONLY.
+        if "serde(skip)" not in curve:
+            curve = curve.replace(
+                "#[allow(private_interfaces)]\n        _priv: PrivateZST,",
+                "#[allow(private_interfaces)]\n        #[serde(skip)]\n        _priv: PrivateZST,",
+            )
+
+    if patch(curve_path, curve_orig, curve):
+        print("  Patched curve.rs (Serialize/Deserialize on P256Point)")
+    else:
+        print("  curve.rs already up to date, skipping")
+
+    # =========================================================================
+    # p1/src/zq.rs
+    # =========================================================================
+    zq_path = os.path.join(p1, "src", "zq.rs")
+    zq_orig = read(zq_path)
+    zq = zq_orig
+
+    if not re.search(r"impl.*FromBytes.*for Zq", zq):
+        zq += """
+impl<Q: PrimeModulus> crate::FromBytes for Zq<Q> {
+    const BYTES_NEEDED: usize = 64;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(
+            bytes.len() >= Self::BYTES_NEEDED,
+            "insufficient bytes length"
+        );
+        let (int, _) = (sfs_bigint::U512::from_le_slice(bytes) % From::from(Q::VALUE)).split();
+        Zq::new(int)
+    }
+}
+"""
+
+    if patch(zq_path, zq_orig, zq):
+        print("  Patched zq.rs (FromBytes impl for Zq)")
+    else:
+        print("  zq.rs already up to date, skipping")
+
+    # =========================================================================
+    # p1/Cargo.toml
+    # =========================================================================
+    cargo_p1_path = os.path.join(p1, "Cargo.toml")
+    cargo_p1_orig = read(cargo_p1_path)
+    cargo_p1 = cargo_p1_orig
+
+    if "serde" not in cargo_p1:
+        cargo_p1 = cargo_p1.replace(
+            "[dependencies]",
+            '[dependencies]\nserde = { version = "1.0", features = ["derive"] }',
+        )
+
+    if patch(cargo_p1_path, cargo_p1_orig, cargo_p1):
+        print("  Patched p1/Cargo.toml (added serde)")
+    else:
+        print("  p1/Cargo.toml already up to date, skipping")
+
+    # =========================================================================
+    # p2
+    # =========================================================================
+    print("\n=== Patching p2 ===")
+
+    # =========================================================================
+    # p2/Cargo.toml
+    # =========================================================================
+    cargo_p2_path = os.path.join(p2, "Cargo.toml")
+    cargo_p2_orig = read(cargo_p2_path)
+    cargo_p2 = cargo_p2_orig
+
+    if "serde" not in cargo_p2:
+        cargo_p2 = cargo_p2.replace(
+            "[dependencies]",
+            '[dependencies]\nserde = { version = "1.0", features = ["derive"] }',
+        )
+
+    if patch(cargo_p2_path, cargo_p2_orig, cargo_p2):
+        print("  Patched p2/Cargo.toml (added serde)")
+    else:
+        print("  p2/Cargo.toml already up to date, skipping")
+
+    # =========================================================================
+    # p2/src/sparsemat.rs
+    # =========================================================================
+    sparsemat_path = os.path.join(p2, "src", "sparsemat.rs")
+    if os.path.exists(sparsemat_path):
+        sparsemat_orig = read(sparsemat_path)
+        sparsemat = sparsemat_orig
+
+        if "Serialize" not in sparsemat:
+            # Add serde import
+            sparsemat = "use serde::{Deserialize, Serialize};\n" + sparsemat
+
+            # Add derives to SparseMatrix
+            sm = re.search(
+                r"#\[derive\(([^)]*)\)\]\npub struct SparseMatrix", sparsemat
+            )
+            if sm and "Serialize" not in sm.group(1):
+                sparsemat = sparsemat.replace(
+                    sm.group(0),
+                    sm.group(0).replace(
+                        "derive(" + sm.group(1) + ")",
+                        "derive(" + sm.group(1) + ", Serialize, Deserialize)",
+                    ),
+                )
+
+            # Add derives to SparseVector
+            sv = re.search(
+                r"#\[derive\(([^)]*)\)\]\npub struct SparseVector", sparsemat
+            )
+            if sv and "Serialize" not in sv.group(1):
+                sparsemat = sparsemat.replace(
+                    sv.group(0),
+                    sv.group(0).replace(
+                        "derive(" + sv.group(1) + ")",
+                        "derive(" + sv.group(1) + ", Serialize, Deserialize)",
+                    ),
+                )
+
+        if patch(sparsemat_path, sparsemat_orig, sparsemat):
+            print("  Patched sparsemat.rs (Serialize/Deserialize on SparseMatrix, SparseVector)")
+        else:
+            print("  sparsemat.rs already up to date, skipping")
+
+    # =========================================================================
+    # p2/src/ec.rs
+    # =========================================================================
+    ec_path = os.path.join(p2, "src", "ec.rs")
+    ec_orig = read(ec_path)
+    ec = ec_orig
+
+    # Add serde import if not present
+    if "use serde" not in ec:
+        ec = re.sub(
+            r"(use p1::[^\n]+\n)",
+            r"\1use serde::{Serialize, de::DeserializeOwned};\n",
+            ec,
+            count=1,
+        )
+
+    # Add Serialize + DeserializeOwned + Sum to EllipticCurve supertraits
+    ec_trait = re.search(
+        r"(pub trait EllipticCurve:.*?)(^\{)", ec, re.DOTALL | re.MULTILINE
+    )
+    if ec_trait:
+        trait_block = ec_trait.group(0)
+        additions = []
+        if "Serialize" not in trait_block:
+            additions.append("    + Serialize")
+            additions.append("    + DeserializeOwned")
+        if "+ Sum" not in trait_block:
+            additions.append("    + Sum")
+            # Also add Sum to the std imports if needed
+            if "iter::Sum" not in ec:
+                ec = ec.replace("fmt::Debug,", "fmt::Debug,\n    iter::Sum,")
+                # Re-search since ec changed
+                ec_trait = re.search(
+                    r"(pub trait EllipticCurve:.*?)(^\{)",
+                    ec,
+                    re.DOTALL | re.MULTILINE,
+                )
+                trait_block = ec_trait.group(0)
+
+        if additions:
+            insert_text = "\n".join(additions) + "\n"
+            if "+ 'static" in trait_block:
+                new_trait_block = trait_block.replace(
+                    "    + 'static", insert_text + "    + 'static", 1
+                )
+            else:
+                new_trait_block = ec_trait.group(1) + insert_text + ec_trait.group(2)
+            ec = ec[: ec_trait.start()] + new_trait_block + ec[ec_trait.end() :]
+
+    if patch(ec_path, ec_orig, ec):
+        print("  Patched ec.rs (Serialize + DeserializeOwned + Sum on EllipticCurve)")
+    else:
+        print("  ec.rs already up to date, skipping")
+
+    print("\n=== Done ===")
+    print(f"Backups saved to: {backup_dir}/")
+    print(f"Build p3 with:    cd {root}/p3 && cargo build")
+
+
+if __name__ == "__main__":
+    main()
