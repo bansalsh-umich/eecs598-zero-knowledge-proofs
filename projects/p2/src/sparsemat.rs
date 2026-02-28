@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use itertools::{EitherOrBoth, Itertools};
 use p1::{Field, poly::Multilinear};
 use std::collections::BTreeMap;
@@ -15,7 +16,7 @@ use std::ops::{Index, Neg, Sub};
 /// - values = [1, 2, 3, 4, 5]
 /// - col_indices = [0, 2, 2, 0, 1]
 /// - row_offsets = [0, 2, 3, 5]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SparseMatrix<F> {
     pub rows: usize,
     pub cols: usize,
@@ -220,7 +221,7 @@ impl<F: Field> Index<(usize, usize)> for SparseMatrix<F> {
 ///
 /// Entries are stored in a BTreeMap for efficient lookup and ordered iteration.
 /// Indexing a position with no stored value returns zero.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SparseVector<F> {
     pub size: usize,
     contents: BTreeMap<usize, F>,

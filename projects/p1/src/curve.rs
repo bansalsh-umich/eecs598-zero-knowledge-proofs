@@ -5,11 +5,13 @@ use std::{
 };
 
 use crate::{
+    FromBytes,
     moduli::{P256, P256CurveOrder},
     zq::Zq,
 };
 
 use num_traits::Zero;
+use serde::{Deserialize, Serialize};
 
 ///The prime defining the underlying field of the curve.
 /// Note that this prime is equal to three mod four,
@@ -45,7 +47,7 @@ pub const SECP256R1_G_Y: Zq<P256> = Zq::from_str_unchecked(
 
 pub const SECP256R1_G: P256Point = P256Point::point_unchecked(SECP256R1_G_X, SECP256R1_G_Y);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 struct PrivateZST;
 
 /// A point on the NIST P-256 elliptic curve.
@@ -109,7 +111,7 @@ struct PrivateZST;
 ///
 /// Use the [`P256Point::point`] constructor to create valid points; it checks that
 /// the coordinates satisfy the curve equation.
-#[derive(Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub enum P256Point {
     ///The point at infinity
     #[default]
@@ -122,6 +124,7 @@ pub enum P256Point {
         y: Zq<P256>,
         // See above!
         #[allow(private_interfaces)]
+        #[serde(skip)]
         _priv: PrivateZST,
     },
 }

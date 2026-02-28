@@ -522,3 +522,15 @@ impl<Q> Default for Zq<Q> {
         Zq::new_unchecked(U256::default())
     }
 }
+
+impl<Q: PrimeModulus> crate::FromBytes for Zq<Q> {
+    const BYTES_NEEDED: usize = 64;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert!(
+            bytes.len() >= Self::BYTES_NEEDED,
+            "insufficient bytes length"
+        );
+        let (int, _) = (sfs_bigint::U512::from_le_slice(bytes) % From::from(Q::VALUE)).split();
+        Zq::new(int)
+    }
+}
