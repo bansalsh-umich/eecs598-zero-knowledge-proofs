@@ -1,0 +1,227 @@
+%% HOW TO USE THIS TEMPLATE:
+%%
+%% Ensure that you replace "YOUR NAME HERE" with your own name, in the
+%% \studentname command below.  Also ensure that the "answers" option
+%% appears within the square brackets of the \documentclass command,
+%% otherwise latex will suppress your solutions when compiling.
+%%
+%% Type your solution to each problem part within
+%% the \begin{solution} \end{solution} environment immediately
+%% following it.  Use any of the macros or notation from the
+%% header.tex that you need, or use your own (but try to stay
+%% consistent with the notation used in the problem).
+%%
+%% If you have problems compiling this file, you may lack the
+%% header.tex file (available on the course web page), or your system
+%% may lack some LaTeX packages.  The "exam" package (required) is
+%% available at:
+%%
+%% http://mirror.ctan.org/macros/latex/contrib/exam/exam.cls
+%%
+%% Other packages can be found at ctan.org, or you may just comment
+%% them out (only the exam and ams* packages are absolutely required).
+
+
+% the "answers" option causes the solutions to be printed
+\documentclass[11pt,addpoints]{exam}
+
+\usepackage{amsmath,amsfonts,amssymb,amsthm,mathtools}
+% any of the following packages may be safely omitted if they are not
+% available on your system (but they should be)
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage[ff,primitives]{cryptocode}
+
+% required macros -- canonical course header files
+\input{../../notation.tex}
+\input{../../zk-notation.tex}
+\input{../../environments.tex}
+\input{../../logistics.tex}
+
+% VARIABLES
+
+\newcommand{\hwnum}{1}
+\newcommand{\duedate}{March 9} % changing this does not change the
+% actual due date :)
+\newcommand{\studentname}{YOUR NAME HERE}
+
+% END OF SUPPLIED VARIABLES
+
+\hwheader                       % execute homework commands
+
+\begin{document}
+
+\pagestyle{head} % put header on every page
+
+\noindent This homework is due by \textbf{11:59pm on \duedate} via the
+\href{\autograderurl}{Autograder
+  page}.  Start early!
+
+\medskip
+\noindent \textbf{Instructions.} Solutions must be \emph{typed} in \LaTeX\ (a template for this homework is available on
+the course web page).  Your work will be graded on \emph{correctness},
+\emph{clarity}, and \emph{concision}.  You should only submit work
+that you believe to be correct; if you cannot solve a problem
+completely, you will get significantly more partial credit if you
+clearly identify the gap(s) in your solution.  It is good practice to
+start any long solution with an informal (but accurate) ``proof
+summary'' that describes the main idea.
+
+\medskip
+\noindent You may consult external sources.  However, you must \textbf{\emph{write your own solutions}} and \textbf{\emph{list your sources}} for each problem. If you turn in a proof you cannot explain orally, you will fail the assignment.
+
+% QUESTIONS START HERE.  WRITE YOUR SOLUTIONS WITHIN THE "solution"
+% ENVIRONMENTS FOLLOWING EACH QUESTION.
+
+\begin{questions}
+\question \emph{(Discrete logarithms and Pedersen commitments.)} 
+
+  Recall the discrete logarithm assumption we discussed in class. See pseudocode on the left-hand side below. Let $\G$ be a group of order $p$ a prime and $G$ be a generator of $\G$. (Remember that $\G$ having prime order means every element has order $p$.) We will denote the identity of $\G$ as $0$.
+
+
+  We can generalize the task of finding the discrete logarithm of a single group element to the task of finding a discrete logarithm \emph{relation} between 
+  many elements. To define this, first let $\msm(\vec{x}, \vec{G}) = \sum_{i=1}^n \vec{x}_i \vec{G}_i$ denote the multi-scalar multiplication between a vector $\vec{x}$ of $n$ $\Z_p$ elements and an equal-length vector $\vec{G}$ of elements of $\G$. Then, a discrete logarithm relation between $n$ group elements $\vec{G} = (G_1, \ldots, G_n)$ is a nonzero vector $\vec{x} = (x_1, \ldots, x_n)$ of $\Z_p$ elements such that $\msm(\vec{x}, \vec{G}) = 0$. The pseudocode on the right below  defines a game $\mathsf{DLREL}^{\mathbb{G},p, n}$ that tasks an adversary $\advA$ with finding a discrete logarithm relation between $n$ random group elements. We denote the vector of all zeros as $\vec{0}$.
+
+  \begin{figure}[h]
+    \centering
+    \hfpages{0.3}{
+    \procedurev{$\mathsf{DL}^{\mathbb{G},G,p}(\advA)$}\\
+    $x\getsr\mathbb{Z}_p$\\
+    $x' \getsr \advA(xG, \mathbb{G}, G, p)$\\
+    Return $x=x'$
+    }{
+      \procedurev{$\mathsf{DLREL}^{\mathbb{G},p, n}(\advA)$}\\
+      $\vec{G}\getsr \mathbb{G}^n$\\
+      $\vec{x} \getsr \advA(\vec{G}, \mathbb{G}, p)$\\
+      Return $\msm(\vec{x}, \vec{G}) = 0 \wedge \vec{x} \ne \vec{0}$
+      }
+    \label{fig:dlgame}
+  \end{figure}
+
+  
+
+  \begin{parts}
+  \part Use a reduction to show that finding a discrete logarithm relation is as hard as finding the discrete logarithm of a single element. More concretely, you should construct a reduction $\advB$ that, given access to an adversary $\advA$ that wins $\mathsf{DLREL}^{\mathbb{G},p, n}$ with probability $\epsilon$, wins game $\mathsf{DL}^{\mathbb{G},G,p}$ with probability at least $\epsilon$ (perhaps minus a small additional term).
+
+
+    \begin{solution}
+
+    \end{solution}
+
+  \part The vector Pedersen commitment $\mathsf{VPC}$ we discussed in class is depicted in Figure~\ref{fig:vpc}, along with (on the right) the game $\commitmentBind$ defining binding security for a commitment $\commitment$. Use a reduction to show that breaking binding for $\mathsf{VPC}$ is as hard as finding a discrete logarithm relation in $\mathbb{G}$. More concretely, you should construct a reduction $\advB$ that, given access to an adversary $\advA$ that wins $\commitmentBind$ against $\mathsf{VPC}$ with probability $\epsilon$, wins game $\mathsf{DLREL}^{\mathbb{G},p, n}$ with probability at least $\epsilon$ (perhaps minus a small additional term).
+\begin{figure}[t]
+  \centering
+  \hfpagesss{0.23}{0.27}{0.3}{
+  \procedurev{$\mathsf{VPC}.\commit(\pp, \vec{x})$}\\
+  $\vec{G}, H, p \gets\pp$\\
+  $r\getsr \Z_p$\\
+  $C \gets \msm(\vec{x},\vec{G}) + rH$\\
+  Return $C,r$
+  }{
+  \procedurev{$\mathsf{VPC}.\open(\pp, C, \vec{x}, r)$}\\
+  $\vec{G}, H, p \gets\pp$\\
+  Return $C = (\msm(\vec{x},\vec{G}) + rH)$
+  }{
+    \procedurev{$\commitmentBind^{\commitment}(\advA)$}\\
+    $\pp\getsr\commitment.\Setup$\\
+    $(x_0,r_0),(x_1,r_1),C^*\getsr\advA(\pp)$\\
+    Return $\commitment.\open(\pp, C^*, x_0, r_0)$\\
+    \myind\myind\myind $\wedge\; \commitment.\open(\pp, C^*, x_1, r_1)$\\
+    \myind\myind\myind $\wedge\; (x_0,r_0)\ne(x_1,r_1)$
+  }
+  \caption{The vector Pedersen commitment $\mathsf{VPC}$ and the game $\commitmentBind$ defining binding security for a commitment $\commitment$.}
+  \label{fig:vpc}
+\end{figure}
+
+    \begin{solution}
+
+    \end{solution}
+  \end{parts}
+  \question \emph{(Pedersen commitments to bits.)} The project 3 handout describes a sigma protocol for proving a multiplication constraint between Pedersen-committed values---concretely, given $C_a,C_b,C_c$ commitments to $a,b,c$, the protocol lets the prover show that $ab=c$ (without revealing $a,b,c$). Use this protocol to build a sigma protocol for proving that the value committed in a Pedersen commitment is either zero or one (without revealing which). Prove your protocol is 2-special-sound and special HVZK.
+
+  \begin{solution}
+  
+  \end{solution}
+
+\question \emph{(Compiling PIOPs to arguments.)}  In this exercise you will prove the following theorem about the ``oracle-to-PC'' compiler we discussed in class.
+
+\begin{theorem*}
+  Let $\piop = \langle \prover_{\piop}, \verifier_{\piop}\rangle$ be a polynomial interactive oracle proof for $\lang$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$. Let $\polycom = (\Setup, \commit, \open)$ be a polynomial commitment scheme. Let $\argument[\piop, \polycom]$ be the argument obtained from the ``oracle-to-PC'' compiler. If $\polycom.\open$ is a proof of knowledge and $\piop$ is sound, then $\argument[\piop,\polycom]$ is a sound interactive argument for $\lang$.
+\end{theorem*}
+
+  %In this exercise, prove we can compile PIOP to argument using oracle-to-pc transform from class. Prove soundness. Theorem: given sound PIOP for R and knowledge-sound PC, oracle-to-PC transform produces sound argument for R.
+  You will prove this using a hybrid argument: first, you will move from the standard soundness game $\soundnessgame$ for $\argument[\piop,\polycom]$ to a game $G_1$ where the challenger extracts a witness from the malicious prover after every PC opening. Then, you will show a malicious prover in this hybrid game $G_1$ can be turned into a malicious prover for the PIOP soundness game.
+
+  \begin{parts}
+  \part Write the pseudocode for game $G_1$. Prove that for any prover $\prover^*$, the difference in its win probability between $\soundnessgame$ and $G_1$ is at most the knowledge error of $\polycom$.
+
+    \begin{solution}
+
+    \end{solution}
+
+  \part Complete the proof by showing a reduction from game $G_1$ to the PIOP soundness game. More concretely, you should construct a reduction $\advB$ that, given access to a prover $\prover^*$ that wins game $G_1$ with probability $\epsilon$, wins the PIOP soundness game with probability at least $\epsilon$ (perhaps minus a small additional term).
+
+    \begin{solution}
+
+    \end{solution}
+
+  \part \emph{(Extra credit.)} 
+
+  Your proof relies quite fundamentally on the knowledge soundness of $\polycom$'s opening proof. For extra credit, either prove or disprove the following stronger claim that relaxes the assumed security of $\polycom$'s opening proof:
+
+  \begin{theorem*}
+    Let $\piop = \langle \prover_{\piop}, \verifier_{\piop}\rangle$ be a polynomial interactive oracle proof for $\lang$ with degree and variable bounds $(d_1, v_1), \ldots, (d_k, v_k)$. Let $\polycom = (\Setup, \commit, \open)$ be a polynomial commitment scheme. Let $\argument[\piop, \polycom]$ be the argument obtained from the ``oracle-to-PC'' compiler. \textbf{If $\polycom.\open$ and $\piop$ are sound}, then $\argument[\piop,\polycom]$ is a sound interactive argument for $\lang$.
+  \end{theorem*}
+
+    \begin{solution}
+
+    \end{solution}
+  \end{parts}
+
+ 
+
+ \question \emph{(Fiat-Shamir soundness for sequential composition.)}
+ 
+ This question illustrates the need for stronger soundness notions when compiling IPs to non-interactive arguments using the Fiat-Shamir transform. Let $\ip = \langle \Setup, \prover, \verifier \rangle$ be a public-coin interactive proof for language $\calL$ with soundness error $1/3$. Let $\ip_{seq}^n$ be the interactive proof for $\calL$ obtained by $n$-fold sequential composition of $\ip$. (In slightly more detail, $\ip_{seq}^n$ runs $\ip$ $n$ times in sequence; its verifier returns 1 only if all $n$ runs of $\ip$ return 1.) Note that $\ip_{seq}^n$ is public coin because $\ip$ is.
+    
+ \begin{parts}
+ 
+  \part Show that $\ip_{seq}^n$ has soundness error $1/3^n$.
+
+
+  \begin{solution}
+    stuff
+  \end{solution}
+
+  \part Show that the non-interactive argument $\FS^\RO[\ip^n_{seq}]$ obtained by applying the Fiat-Shamir transform is \emph{not} sound, by giving a very efficient attack against it. You need not give full pseudocode for your attack, but you must  state and prove a precise claim about the attack's success probability.
+  \begin{solution}
+stuff
+  \end{solution}
+ \end{parts}
+
+
+
+ \question \emph{(Parallel composition of interactive arguments of knowledge.)}
+ 
+ For any two interactive protocols $\ip_1 = \langle \Setup_1, \prover_1, \verifier_1 \rangle$ and $\ip_2 = \langle \Setup_2, \prover_2, \verifier_2 \rangle$ the parallel composition is the interactive protocol where the $i$th prover message is the concatenation of the $i$th prover messages of $\ip_1$ and $\ip_2$, and likewise for the verifier messages. The verifier's output is the AND of the verifier outputs of $\ip_1$ and $\ip_2$.
+ 
+ 
+ Let $\pok_1$ be an interactive argument of knowledge for relation $\calR_1$ and $\pok_2$ be an interactive argument of knowledge for relation $\calR_2$. Show that the parallel composition of $\pok_1$ and $\pok_2$ is an interactive argument of knowledge for relation $\calR_1 \times \calR_2$. (For concreteness, the relation $\calR_1 \times \calR_2$ is the set of pairs of pairs $(x_1,x_2),(w_1,w_2)$ such that $(x_1,w_1) \in \calR_1$ and $(x_2,w_2) \in \calR_2$.)
+
+
+
+ \begin{solution}
+  stuff
+ \end{solution}
+
+    
+\end{questions}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
