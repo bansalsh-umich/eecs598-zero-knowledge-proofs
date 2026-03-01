@@ -1,0 +1,135 @@
+%%% logistics.tex -- Course logistics macros (headers, xsim, URLs)
+%%% Depends on: environments.tex (for \textred)
+
+%%% FANCYHDR (guarded for exam class compatibility)
+
+\makeatletter
+\@ifclassloaded{exam}{}{%
+  \RequirePackage{fancyhdr}
+}
+\makeatother
+
+%%% URLS AND COURSE INFO
+
+\newcommand{\githuburl}{https://github.com/pag-crypto/EECS498598-W26-ZKP}
+\newcommand{\autograderurl}{https://autograder.io/web/course/365}
+\newcommand{\currentyear}{2026}
+
+\newif\ifGSI
+\GSItrue
+\newcommand{\tbd}{\textred{TBD}}
+\newcommand{\GSIfullname}{Chad Sharp}
+\newcommand{\GSIfirstname}{Chad}
+
+%%% DOCUMENT HEADERS
+
+\newcommand{\lecheader}{%
+  \chead{\large \textbf{Lecture \lecturenum\\\lecturetopic}}
+
+  \lhead{\small
+    \textbf{\href{https://github.com/pag-crypto}{Zero-Knowledge }}\\}
+
+  \rhead{\small \textbf{Instructor:
+      \href{https://web.eecs.umich.edu/~paulgrub/}{Paul Grubbs}\\Scribe:
+      \scribename}}
+
+  \setlength{\headheight}{20pt}
+  \setlength{\headsep}{16pt}
+}
+
+\newcommand{\syllabusheader}{%
+  \chead{\large \textbf{Course Information\\and Syllabus}}
+
+  \lhead{\small
+    \textbf{{Zero-Knowledge Proofs}}\\\textbf{University of Michigan, Winter 2026}}
+
+  \rhead{\small \textbf{Instructor:
+      \href{http://www.eecs.umich.edu/~paulgrub/}{Paul Grubbs}\\\ifGSI GSI:
+      \GSIfullname\fi}}
+
+  \setlength{\headheight}{20pt}
+  \setlength{\headsep}{16pt}
+}
+
+\newcommand{\hwheader}{%
+  \chead{\Large \textbf{Homework \hwnum}}
+
+  \lhead{\small
+    \textbf{\href{\githuburl}{Zero-Knowledge Proofs}\\University of Michigan, Winter \currentyear}}
+
+  \rhead{\small \textbf{Instructor:
+      \href{https://web.eecs.umich.edu/~paulgrub/}{Paul
+        Grubbs}\\Student: \studentname}}
+
+  \setlength{\headheight}{20pt}
+  \setlength{\headsep}{16pt}
+
+  \headrule
+}
+
+\newcommand{\examheader}{%
+  \chead{\Large \textbf{Take-Home Exam \examnum}}
+
+  \lhead{\small
+    \textbf{\href{\githuburl}{Zero-Knowledge Proofs}\\University of Michigan, Winter \currentyear}}
+
+  \rhead{\small \textbf{Instructor:
+      \href{https://web.eecs.umich.edu/~paulgrub/}{Paul
+        Grubbs}\\Student: \studentname}}
+
+  \setlength{\headheight}{20pt}
+  \setlength{\headsep}{16pt}
+
+  \headrule
+}
+
+%%% XSIM CONFIGURATION (guarded: conflicts with exam class \question)
+
+\makeatletter
+\@ifclassloaded{exam}{}{%
+  \RequirePackage{xsim}
+  \RequirePackage{needspace}
+
+  \DeclareExerciseEnvironmentTemplate{QRef}{%
+      \par\addvspace{\baselineskip}
+      \Needspace*{2\baselineskip}
+      \noindent
+      \hyperref[ans:\GetExerciseProperty{ID}]{\textbf{\XSIMmixedcase{\GetExerciseName}~\GetExerciseProperty{counter}.}}
+      \label{ques:\GetExerciseProperty{ID}}
+  }{\par\addvspace{\baselineskip}}
+
+  \DeclareExerciseEnvironmentTemplate{ARef}{%
+          \Needspace*{2\baselineskip}
+          \noindent
+          \hyperref[ques:\GetExerciseProperty{ID}]{\textbf{\XSIMmixedcase{\GetExerciseParameter{exercise-name}}~\GetExerciseProperty{counter}.}}
+          \label{ans:\GetExerciseProperty{ID}}
+          \GetExerciseBody{exercise}
+          \par \medskip \noindent
+          \textbf{\XSIMmixedcase{\GetExerciseName}.}
+  }{\par\addvspace{\baselineskip}}
+
+  \DeclareExerciseHeadingTemplate{simple}{%
+      \section*{\XSIMmixedcase{\GetExerciseParameter{solution-name}s}}
+  }
+
+  \DeclareExerciseType{question}{%
+      exercise-env = question,
+      solution-env = answer,
+      exercise-name = Question,
+      solution-name = Answer,
+      exercise-template = QRef,
+      solution-template = ARef,
+  }
+
+  \xsimsetup{%
+    path = {questions},
+    file-extension = {aux},
+    print-solutions/headings-template=simple,
+    exercise/template=runin
+  }
+
+  \loadxsimstyle{layouts}
+
+  \AtEndDocument{\pagebreak\printsolutions}
+}
+\makeatother
