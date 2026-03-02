@@ -1,0 +1,155 @@
+%%% notation.tex -- General math/CS notation
+%%% Canonical source for all course documents.
+
+\RequirePackage{mathtools}
+
+%%% BLACKBOARD SYMBOLS
+
+% hyperref defines \C and \G; undefine to avoid conflicts
+\let\C\relax
+\let\G\relax
+\newcommand{\C}{\ensuremath{\mathbb{C}}}
+\newcommand{\D}{\ensuremath{\mathbb{D}}}
+\newcommand{\F}{\ensuremath{\mathbb{F}}}
+\newcommand{\G}{\ensuremath{\mathbb{G}}}
+\newcommand{\J}{\ensuremath{\mathbb{J}}}
+\newcommand{\N}{\ensuremath{\mathbb{N}}}
+\newcommand{\Q}{\ensuremath{\mathbb{Q}}}
+\newcommand{\R}{\ensuremath{\mathbb{R}}}
+\newcommand{\T}{\ensuremath{\mathbb{T}}}
+\newcommand{\Z}{\ensuremath{\mathbb{Z}}}
+\newcommand{\QR}{\ensuremath{\mathbb{QR}}}
+\newcommand{\QNR}{\ensuremath{\mathbb{QNR}}}
+
+\newcommand{\Zt}{\ensuremath{\Z_t}}
+\newcommand{\Zp}{\ensuremath{\Z_p}}
+\newcommand{\Zq}{\ensuremath{\Z_q}}
+\newcommand{\ZN}{\ensuremath{\Z_N}}
+\newcommand{\Zps}{\ensuremath{\Z_p^*}}
+\newcommand{\ZNs}{\ensuremath{\Z_N^*}}
+\newcommand{\JN}{\ensuremath{\J_N}}
+\newcommand{\QRN}{\ensuremath{\QR_{N}}}
+\newcommand{\QRp}{\ensuremath{\QR_{p}}}
+
+%%% CALLIGRAPHIC SETS (full alphabet)
+
+\newcommand{\calA}{\ensuremath{\mathcal{A}}}
+\newcommand{\calB}{\ensuremath{\mathcal{B}}}
+\newcommand{\calC}{\ensuremath{\mathcal{C}}}
+\newcommand{\calD}{\ensuremath{\mathcal{D}}}
+\newcommand{\calE}{\ensuremath{\mathcal{E}}}
+\newcommand{\calF}{\ensuremath{\mathcal{F}}}
+\newcommand{\calG}{\ensuremath{\mathcal{G}}}
+\newcommand{\calH}{\ensuremath{\mathcal{H}}}
+\newcommand{\calI}{\ensuremath{\mathcal{I}}}
+\newcommand{\calJ}{\ensuremath{\mathcal{J}}}
+\newcommand{\calK}{\ensuremath{\mathcal{K}}}
+\newcommand{\calL}{\ensuremath{\mathcal{L}}}
+\newcommand{\calM}{\ensuremath{\mathcal{M}}}
+\newcommand{\calN}{\ensuremath{\mathcal{N}}}
+\newcommand{\calO}{\ensuremath{\mathcal{O}}}
+\newcommand{\calP}{\ensuremath{\mathcal{P}}}
+\newcommand{\calQ}{\ensuremath{\mathcal{Q}}}
+\newcommand{\calR}{\ensuremath{\mathcal{R}}}
+\newcommand{\calS}{\ensuremath{\mathcal{S}}}
+\newcommand{\calT}{\ensuremath{\mathcal{T}}}
+\newcommand{\calU}{\ensuremath{\mathcal{U}}}
+\newcommand{\calV}{\ensuremath{\mathcal{V}}}
+\newcommand{\calW}{\ensuremath{\mathcal{W}}}
+\newcommand{\calX}{\ensuremath{\mathcal{X}}}
+\newcommand{\calY}{\ensuremath{\mathcal{Y}}}
+
+%%% PAIRED DELIMITERS
+
+\DeclarePairedDelimiter\inner{\langle}{\rangle}
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}
+\DeclarePairedDelimiter\set{\{}{\}}
+\DeclarePairedDelimiter\parens{(}{)}
+\DeclarePairedDelimiter\tuple{(}{)}
+\DeclarePairedDelimiter\bracks{[}{]}
+\DeclarePairedDelimiter\round{\lfloor}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\length{\lVert}{\rVert}
+\DeclarePairedDelimiter\lift{\llbracket}{\rrbracket}
+\DeclarePairedDelimiter\len{\lvert}{\rvert}
+\DeclarePairedDelimiter\norm{\lVert}{\rVert}
+\DeclarePairedDelimiter\prns{(}{)}
+\DeclarePairedDelimiter\braces{\{}{\}}
+\DeclarePairedDelimiterX\condprns[2]{(}{)}{\,#1 \;\delimsize\vert\; #2\,}
+\DeclarePairedDelimiterX\condbrks[2]{[}{]}{\,#1 \;\delimsize\vert\; #2\,}
+\DeclarePairedDelimiterX\condbraces[2]{\{}{\}}{\,#1 \;\delimsize\vert\; #2\,}
+
+%%% ADDITIONAL MATH SYMBOLS
+
+\newcommand{\bits}{\{0,1\}}
+\newcommand{\Gd}{{{\tilde{\mathbb G}}}}
+\newcommand{\bP}{{{\mathbb P}}}
+\newcommand{\bE}{{{\mathbb E}}}
+\newcommand{\B}{{{\textnormal B}}}
+\newcommand{\I}{{{\textnormal I}}}
+\newcommand{\Y}{{{\sf Y}}}
+\newcommand{\bigO}{\calO}
+\newcommand{\goesto}{{\rightarrow}}
+\newcommand{\eqdef}{\stackrel{\rm def}{=}}
+\def\union{\cup}
+\def\sep{\,}
+\def\bigunion{\bigcup}
+\def\suchthatt{\: :\:}
+\def\nextt{\hspace{3pt};\hspace{6pt}}
+\newcommand{\card}[1]{|#1|}
+\def\leqq{\;\leq\;}
+\def\eqq{\;=\;}
+\def\geqq{\;\geq\;}
+\def\lst{\;<\;}
+\def\gst{\;>\;}
+\newcommand{\dash}{\mbox{-}}
+\renewcommand{\choose}[2]{{{#1}\atopwithdelims(){#2}}}
+\newcommand{\?}{\stackrel{?}{=}}
+\newcommand{\llor}{\lor\hspace{0.1cm}}
+
+%%% ASYMPTOTICS
+
+\DeclareMathOperator{\poly}{poly}
+\DeclareMathOperator{\polylog}{polylog}
+\DeclareMathOperator{\negl}{negl}
+\newcommand{\Otil}{\ensuremath{\tilde{O}}}
+
+%%% PROBABILITY AND STATISTICS
+
+\DeclareMathOperator*{\E}{E}
+\DeclareMathOperator*{\Var}{Var}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclareMathOperator*{\prob}{\bP}
+\DeclareMathOperator*{\ex}{\bE}
+
+%%% GENERAL COMPUTING
+
+\newcommand{\bit}{\ensuremath{\set{0,1}}}
+\newcommand{\pmone}{\ensuremath{\set{-1,1}}}
+
+\newcommand{\algo}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\problem}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\class}[1]{\ensuremath{\mathsf{#1}}}
+
+%%% COMPLEXITY CLASSES
+
+\renewcommand{\P}{\class{P}}
+\newcommand{\BPP}{\class{BPP}}
+\newcommand{\NP}{\class{NP}}
+\newcommand{\coNP}{\class{coNP}}
+\newcommand{\AM}{\class{AM}}
+\newcommand{\coAM}{\class{coAM}}
+\newcommand{\IP}{\class{IP}}
+
+%%% INDISTINGUISHABILITY
+
+\newcommand{\compind}{\ensuremath{\stackrel{c}{\approx}}}
+\newcommand{\statind}{\ensuremath{\stackrel{s}{\approx}}}
+\newcommand{\perfind}{\ensuremath{\equiv}}
+
+%%% MATH FORMATTING
+
+\DeclareMathAlphabet{\mathsl}{OT1}{cmr}{m}{sl}
+\DeclareMathAlphabet{\mathsc}{OT1}{cmr}{m}{sc}
