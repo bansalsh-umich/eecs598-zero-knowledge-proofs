@@ -1,0 +1,662 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 7: Sumcheck Analysis, Polynomial Commitments, and IOPs}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\newtcolorbox{importantbox}[1][]{
+  colback=blue!5!white,
+  colframe=blue!60!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+\newtcolorbox{definitionbox}[1][]{
+  colback=green!5!white,
+  colframe=green!50!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+\newtcolorbox{proofbox}[1][]{
+  colback=orange!5!white,
+  colframe=orange!60!black,
+  fonttitle=\bfseries,
+  title=#1,
+  breakable
+}
+
+\begin{document}
+
+%----------------------------------------------------------------------
+% Title block
+%----------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026 \quad --- \quad Lecture 7}\\[4pt]
+  {\large \textbf{Sumcheck Analysis, Polynomial Commitments, and Interactive Oracle Proofs}}\\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+    \href{mailto:paulgrub@umich.edu}{\texttt{paulgrub@umich.edu}} \quad
+    Beyster 4709}
+\end{center}
+
+\hrule
+\vspace{10pt}
+
+%----------------------------------------------------------------------
+% Agenda
+%----------------------------------------------------------------------
+\section*{Agenda}
+\begin{enumerate}
+  \item Announcements
+  \item Analyzing the sumcheck protocol (soundness proof)
+  \item Polynomial commitments (PCs): syntax and security
+  \item A polynomial commitment scheme with linear-sized proofs
+  \item Interactive oracle proofs (IOPs) and \emph{polynomial} IOPs (PIOPs)
+\end{enumerate}
+
+\vspace{6pt}
+\hrule
+\vspace{10pt}
+
+%----------------------------------------------------------------------
+\section{Announcements}
+%----------------------------------------------------------------------
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item The autograder is working.
+  \item Due date: 2/20.
+\end{itemize}
+
+%----------------------------------------------------------------------
+\section{Analyzing the Sumcheck Protocol}
+%----------------------------------------------------------------------
+
+Recall from the previous lecture that the \emph{sumcheck protocol} allows a prover to convince a verifier that
+\[
+  H = \sum_{i \in \bits^\ell} g(i),
+\]
+where $g$ is an $\ell$-variate polynomial of maximal individual degree $d$ over a field $\F$.  In this section we prove the soundness of that protocol.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, fonttitle=\bfseries,
+                  title={Theorem (Soundness of Sumcheck)}]
+\textbf{Theorem 1.}
+\textit{Let $g$ be an $\ell$-variate polynomial of maximal degree $d$ over the field $\F$.
+Then for any malicious prover $\prover^*$ and value $H \neq \sum_{i \in \bits^\ell} g(i)$,}
+\[
+  \Pr\!\left[\mathsf{out}_\verifier\bigl[\prover^*(g, H) \leftrightarrow \verifier(g, H)\bigr] = 1\right]
+  \;\le\;
+  \frac{\ell d}{|\F|}.
+\]
+\end{tcolorbox}
+
+\subsection{Proof of Soundness}
+
+We prove the theorem by induction on the number of rounds $\ell$.
+
+\begin{proofbox}[Proof sketch (by induction on $\ell$)]
+
+\textbf{Setup.}  The malicious prover $\prover^*$ sends a univariate polynomial $g_1$ to the verifier, and claims
+\[
+  g_1^*(0) + g_1^*(1) = H.
+\]
+The verifier checks this claim and then samples $r_1 \xleftarrow{\$} \Fp$.
+
+\medskip
+\textbf{Key observation.}  Either the polynomial $g_1^*$ sent by $\prover^*$ differs from the honest $g_1$, or it is equal to the honest $g_1$.
+
+\begin{itemize}
+  \item If $g_1^* \neq g_1$ (the honest round-1 polynomial), then the two univariate polynomials of degree $\le d$ agree on at most $d$ points.  Hence
+  \[
+    \Pr[g_1^*(r_1) = g_1(r_1)] \;\le\; \frac{d}{|\F|}.
+  \]
+  In this case, the verifier is fooled with probability at most $d/|\F|$.
+
+  \item If $g_1^* = g_1$ (same polynomial), then since $H \neq \sum_{i\in\bits^\ell} g(i)$ but $g_1^*(0)+g_1^*(1) = H$, it follows that the sum $g_1^*(0)+g_1^*(1) \neq$ the true sum.  But $g_1 = g_1^*$ means the prover is still cheating ``downstream'': the reduced claim
+  \[
+    g_1(r_1) = \sum_{x_2,\ldots,x_\ell \in \bits} g(r_1, x_2, \ldots, x_\ell)
+  \]
+  cannot both be consistent with the first-round polynomial \emph{and} be the true value.  By the induction hypothesis applied to the remaining $(\ell - 1)$ rounds, the probability of the verifier being fooled is at most $(\ell-1)d/|\F|$.
+\end{itemize}
+
+\textbf{Round structure.}  In general, after $j$ rounds the prover has sent univariate polynomials $g_1^*, \ldots, g_j^*$ and the verifier has sampled challenges $r_1, \ldots, r_j$.  The consistency checks at each round are:
+\[
+  g_{j-1}^*(r_{j-1}) = g_j^*(0) + g_j^*(1),
+\]
+and in the final round $\ell$, the verifier directly queries $g(r_1, \ldots, r_\ell) = g_\ell^*(r_\ell)$.
+
+\medskip
+\textbf{Combining.}  By a union bound over all $\ell$ rounds, the probability that the cheating prover succeeds is at most
+\[
+  \frac{d}{|\F|} + \frac{d}{|\F|} + \cdots + \frac{d}{|\F|} \;(\ell \text{ terms})\;=\; \frac{\ell d}{|\F|}.
+\]
+
+\textbf{More explicitly:}  In round $j$, consider the event that for each round polynomial $g_j^*$:
+\begin{align*}
+  g_\ell(0) + g_\ell(1) &= g_{\ell-1}(r_{\ell-1}) \\
+  g(r_1, \ldots, r_\ell) &= g_\ell(r_\ell).
+\end{align*}
+At round 1 the prover sends $g_1^*$.  The verifier checks $g_1^*(0) + g_1^*(1) = H$ and sends $r_1 \xleftarrow{\$} \Fp$.
+
+The prover then sends $g_2^*$.  The verifier checks:
+\[
+  g_1^*(r_1) = g_2^*(0) + g_2^*(1) \quad \text{(true with probability } \le d/|\F| \text{ if } g_1^* \neq g_1 \text{)}.
+\]
+And so on.  This gives the claimed bound of $\ell d / |\F|$. \qed
+\end{proofbox}
+
+\begin{remark}
+The soundness error $\ell d / |\F|$ is small when $|\F|$ is much larger than $\ell d$.  In practice one chooses $|\F| \gg \ell d$, e.g.\ a prime-order field with $|\F| \approx 2^{128}$.
+\end{remark}
+
+%----------------------------------------------------------------------
+\section{Polynomial Commitments (PCs)}
+%----------------------------------------------------------------------
+
+We now introduce the notion of a \emph{polynomial commitment scheme}.  Before doing so, we review standard (``regular'') commitment schemes, since polynomial commitments generalize them.
+
+\subsection{Regular Commitments: Syntax and Security}
+
+Intuitively, a commitment scheme is like a \textbf{lockbox}: the committer puts a value in the box and hands it to the verifier (commit), and later can open the box to reveal the value (open).
+
+\begin{definitionbox}[Definition: Commitment Scheme]
+A \textbf{commitment scheme} consists of three algorithms:
+\begin{itemize}
+  \item $\setup(1^\lambda) \to \pp$ --- generates public parameters.
+  \item $\commit(\pp, x) \xrightarrow{\$} C$ --- commits to message $x$; often written with explicit randomness as $\commit(\pp, x; r)$ where $r \xleftarrow{\$} \mathcal{R}$.
+  \item $\open(\pp, C, x, r) \to \bits$ --- outputs 1 if $C$ is a valid commitment to $x$ with opening $r$, and 0 otherwise.
+\end{itemize}
+\end{definitionbox}
+
+\subsubsection{Security Notions for Regular Commitments}
+
+\paragraph{Computationally Hiding ($\mathsf{ComHide}_b$)}
+The hiding game proceeds as follows:
+
+\begin{algorithm}
+\caption{$\mathsf{ComHide}_b(\mathcal{A})$}
+\begin{algorithmic}[1]
+  \State $\pp \xleftarrow{\$} \setup$
+  \State $m_0, m_1 \xleftarrow{\$} \mathcal{A}(\pp)$
+  \State $C_b \xleftarrow{\$} \commit(\pp, m_b)$
+  \State $b' \xleftarrow{\$} \mathcal{A}(\pp, C_b)$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent The scheme is \emph{computationally hiding} if no PPT adversary $\mathcal{A}$ can distinguish $b' = b$ with non-negligible advantage.
+
+\paragraph{Computationally Binding ($\mathsf{ComBind}(\mathcal{A})$)}
+The binding game proceeds as follows:
+
+\begin{algorithm}
+\caption{$\mathsf{ComBind}(\mathcal{A})$}
+\begin{algorithmic}[1]
+  \State $\pp \xleftarrow{\$} \setup$
+  \State $(x_0, r_0), (x_1, r_1), C \xleftarrow{\$} \mathcal{A}(\pp)$
+  \State \Return $\open(\pp, C, x_0, r_0) = 1$ \textbf{and} $\open(\pp, C, x_1, r_1) = 1$ \textbf{and} $x_0 \neq x_1$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent The scheme is \emph{computationally binding} if no PPT adversary $\mathcal{A}$ can win this game with non-negligible probability.
+
+\subsection{Pedersen Commitments}
+
+A classical and widely used commitment scheme is the \textbf{Pedersen commitment}.  It is defined over a group $\mathbb{G}$ of prime order $p$.
+
+\begin{tcolorbox}[colback=green!5!white, colframe=green!50!black, fonttitle=\bfseries,
+                  title={Pedersen Commitment Scheme}]
+\textbf{Setup:} Sample $G, H \xleftarrow{\$} \mathbb{G}$ uniformly at random.  Set $\pp = (G, H)$.
+
+\medskip
+\textbf{Commit:} $\commit(\pp = (G,H),\; x \in \Z_p)$:
+\begin{enumerate}
+  \item Sample $r \xleftarrow{\$} \Z_p$.
+  \item Return $C := xG + rH$.
+\end{enumerate}
+
+\medskip
+\textbf{Open:} $\open(\pp, C, x, r)$: Check $C = xG + rH$ and return 1 if valid, 0 otherwise.
+\end{tcolorbox}
+
+\begin{theorem}[Security of Pedersen Commitments]
+Pedersen commitments are (perfectly) hiding and (computationally) binding under the discrete logarithm assumption.\\
+\emph{Proof:} Exercise.
+\end{theorem}
+
+\subsubsection{Vector Pedersen Commitments}
+
+The Pedersen commitment extends naturally to \textbf{vectors of messages}.  Choose group elements $G_1, G_2, \ldots, G_n \xleftarrow{\$} \mathbb{G}$ as part of the public parameters.  To commit to a vector $\vec{x} = (x_1, \ldots, x_n) \in \Z_p^n$:
+\[
+  C := r H + \sum_{i=1}^n x_i G_i, \qquad r \xleftarrow{\$} \Z_p.
+\]
+
+\begin{remark}[Additive Homomorphism]
+Pedersen commitments (and vector Pedersen commitments) are \textbf{additively homomorphic}: given commitments $C_0 = \commit(\pp, x_0; r_0)$ and $C_1 = \commit(\pp, x_1; r_1)$, we have
+\[
+  C_0 + C_1 = \commit(\pp, x_0 + x_1;\; r_0 + r_1).
+\]
+This property is crucial for many ZKP constructions.
+\end{remark}
+
+\subsection{Polynomial Commitments: Syntax}
+
+A \textbf{polynomial commitment} (PC) scheme allows a prover to commit to a polynomial $P$ and later prove evaluations of $P$ at verifier-chosen points, without revealing the full polynomial.  This is strictly more powerful than a regular commitment.
+
+\begin{definitionbox}[Definition: Polynomial Commitment Scheme]
+A \textbf{polynomial commitment scheme} consists of four algorithms:
+\begin{itemize}
+  \item $\setup(n) \to \pp$ \quad --- generates public parameters encoding a \emph{degree bound} $n$ (the committed polynomial must have degree $\le n$).
+  \item $\commit(\pp, P) \to (C_P,\, r)$ \quad --- commits to polynomial $P$, outputting a commitment $C_P$ and an \emph{opening hint} $r$.
+  \item $\open(\pp, C_P, P, z, r) \to (\pi, v)$ \quad --- given a point $z$, outputs a proof $\pi$ and a claimed value $v$ such that $P(z) = v$.  In the \emph{interactive} syntax:
+    \[
+      \open\bigl[\prover(\pp, C_P, P, z, r) \leftrightarrow \verifier(\pp, C_P, z)\bigr]
+    \]
+    where $\verifier$ outputs 0 or 1.
+  \item $\verifyproof(\pp, C_P, z, v, \pi) \to \bits$ \quad --- verifies that $P(z) = v$ given the commitment $C_P$ and proof $\pi$.  $\verifier$ outputs 0 or 1.
+\end{itemize}
+\end{definitionbox}
+
+\begin{remark}
+In the interactive syntax, the open protocol is an interactive proof:
+\[
+  \open\bigl[\prover(\pp, C_P, P, z, r) \leftrightarrow \verifier(\pp, C_P, z)\bigr]
+\]
+where the verifier $\verifier$ outputs 0 or 1.
+\end{remark}
+
+\subsection{PC Security: Evaluation Binding}
+
+The central security notion for polynomial commitments is \emph{evaluation binding}.
+
+\begin{definitionbox}[Definition: Evaluation Binding]
+Define the relation
+\[
+  \mathcal{R}_{\mathrm{PC}} \;=\; \bigl\{\, (\pp, C_P, z, v, n \;;\; P, r) \;:\;
+    C_P \leftarrow \commit(\pp, P;\, r),\;\; P(z) = v,\;\; \deg(P) \le n \,\bigr\}.
+\]
+
+The \textbf{evaluation binding} game $\mathsf{EvalBind}^{\mathcal{A}}_{\mathrm{PC}}$ is:
+\end{definitionbox}
+
+\begin{algorithm}
+\caption{$\mathsf{EvalBind}^{\mathcal{A}}_{\mathrm{PC}}$}
+\begin{algorithmic}[1]
+  \State $\pp \xleftarrow{\$} \setup(n)$
+  \State $P,\; z,\; C_P,\; (\pi_1, v_1),\; (\pi_2, v_2) \xleftarrow{\$} \mathcal{A}(\pp)$
+  \State \Return $\verifyproof(\pp, C_P, z, v_1, \pi_1) = 1$
+    \textbf{ and } $\verifyproof(\pp, C_P, z, v_2, \pi_2) = 1$
+    \textbf{ and } $v_1 \neq v_2$
+\end{algorithmic}
+\end{algorithm}
+
+\noindent The PC scheme is \emph{evaluation binding} if no PPT adversary $\mathcal{A}$ wins with non-negligible probability.
+
+\begin{remark}[Interactive Soundness]
+When the open protocol is interactive, the PC is \emph{sound} if
+\[
+  \open\bigl[\prover \leftrightarrow \verifier\bigr]
+\]
+is a \emph{sound interactive proof} for the relation $\mathcal{R}_{\mathrm{PC}}$.
+
+\medskip
+\noindent\textbf{Note:} Hiding and many other soundness notions exist for polynomial commitments beyond evaluation binding.
+\end{remark}
+
+%----------------------------------------------------------------------
+\section{A Polynomial Commitment with Linear-Sized Proofs}
+%----------------------------------------------------------------------
+
+We now describe a concrete polynomial commitment scheme based on vector Pedersen commitments.  In this scheme the commitment is a single group element, and the evaluation proof has size \emph{linear} in the degree bound $n$.
+
+\subsection{Setup and Commit}
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, fonttitle=\bfseries,
+                  title={Linear-Proof PC: Setup and Commit}]
+\textbf{Setup}$(n)$:
+\begin{enumerate}
+  \item Sample $H, G_0, G_1, \ldots, G_n \xleftarrow{\$} \mathbb{G}$.
+  \item Output $\pp := (G_0, G_1, \ldots, G_n, H)$.
+\end{enumerate}
+
+\medskip
+\textbf{Commit}$(\pp := (G_0, \ldots, G_n, H),\; P)$:
+\begin{enumerate}
+  \item Sample $r \xleftarrow{\$} \Z_p$.
+  \item Parse $P$ as $(a_0, a_1, \ldots, a_n)$ (its coefficient vector, so $P(X) = \sum_{i=0}^n a_i X^i$).
+  \item Return $C_P := r H + \displaystyle\sum_{i=0}^n a_i G_i$.
+\end{enumerate}
+\end{tcolorbox}
+
+This is precisely the \emph{vector Pedersen commitment} applied to the coefficient vector of $P$.
+
+\subsection{The Opening Protocol}
+
+The evaluation proof is an interactive protocol.  Given commitment $C_P$, evaluation point $z$, and the prover's opening hint $r_P$, the prover convinces the verifier that $P(z) = v$.
+
+The idea: define the \emph{monomial vector}
+\[
+  \vec{y} := \langle 1, z, z^2, \ldots, z^n \rangle,
+\]
+so that $P(z) = \langle \vec{p}, \vec{y} \rangle$ where $\vec{p} = (a_0, \ldots, a_n)$.
+
+\begin{importantbox}[Opening Protocol]
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, minimum width=4cm, minimum height=0.6cm},
+  arr/.style={-{Stealth}, thick},
+  font=\small
+]
+  % Prover side
+  \node[align=left] (P) at (-3, 0) {$\mathbf{Open}[\prover](\pp, C_{\vec{p}}, \vec{p}, n, z, v, r_p)$};
+  % Verifier side
+  \node[align=left] (V) at (5, 0) {$\mathbf{Open}[\verifier](\pp, C_{\vec{p}}, n, z, v)$};
+
+  % Shared computation
+  \node[align=left] (y1) at (-3, -0.8) {$\vec{y} \leftarrow \langle 1, z, z^2, \ldots, z^n \rangle$};
+  \node[align=left] (y2) at (5, -0.8) {$\vec{y} \leftarrow \langle 1, z, z^2, \ldots, z^n \rangle$};
+
+  % Prover actions
+  \node[align=left] (pr1) at (-3, -1.6) {$\vec{d} \xleftarrow{\$} \Z_p^{n+1}$; $r_1 \xleftarrow{\$} \Z_p$};
+  \node[align=left] (pr2) at (-3, -2.2) {$C_1 \leftarrow \commit(\pp, \vec{d}; r_1)$};
+  \node[align=left] (pr3) at (-3, -2.8) {$v_{\vec{d}} \leftarrow \langle \vec{d}, \vec{y} \rangle$};
+
+  % Arrow 1: C1, v_d
+  \draw[arr] (-1, -3.4) -- (3.5, -3.4) node[midway, above] {$C_1,\; v_{\vec{d}}$};
+
+  % Verifier samples e
+  \node[align=left] (ve) at (5, -4.0) {$e \xleftarrow{\$} \Z_p$};
+
+  % Arrow 2: e
+  \draw[arr] (3.5, -4.6) -- (-1, -4.6) node[midway, above] {$e$};
+
+  % Prover responds
+  \node[align=left] (pr4) at (-3, -5.2) {$\vec{p}' \leftarrow e\vec{p} + \vec{d}$};
+  \node[align=left] (pr5) at (-3, -5.8) {$r_{\vec{p}'} \leftarrow er_p + r_1$};
+
+  % Arrow 3: p', r_p'
+  \draw[arr] (-1, -6.4) -- (3.5, -6.4) node[midway, above] {$\vec{p}',\; r_{\vec{p}'}$};
+
+  % Verifier checks
+  \node[align=left] (vc) at (5, -7.0) {Return $eC_{\vec{p}} + C_1 = \commit(\pp, \vec{p}'; r_{\vec{p}'})$};
+  \node[align=left] (vc2) at (5, -7.6) {$\quad\quad \wedge\; ev + v_{\vec{d}} = \langle \vec{p}', \vec{y} \rangle$};
+\end{tikzpicture}
+\end{center}
+\end{importantbox}
+
+\subsubsection{Why the Verifier Checks Work}
+
+\paragraph{Check 1: Commitment consistency}
+
+The verifier checks $eC_{\vec{p}} + C_1 = \commit(\pp, \vec{p}'; r_{\vec{p}'})$.  Expanding:
+\begin{align*}
+  eC_{\vec{p}} + C_1
+  &= e(a_0 G_0 + \cdots + a_n G_n + r_p H) + (d_0 G_0 + \cdots + d_n G_n + r_1 H) \\
+  &= (a_0 e + d_0) G_0 + \cdots + (a_n e + d_n) G_n + (r_p e + r_1) H \\
+  &= \commit(\pp,\; e\vec{p} + \vec{d};\; er_p + r_1)
+   = \commit(\pp, \vec{p}';\; r_{\vec{p}'}).
+\end{align*}
+
+\paragraph{Check 2: Inner product consistency}
+
+The verifier checks $ev + v_{\vec{d}} = \langle \vec{p}', \vec{y} \rangle$.  Expanding:
+\begin{align*}
+  e \langle \vec{p}, \vec{y} \rangle + \langle \vec{d}, \vec{y} \rangle
+  &= \langle e\vec{p} + \vec{d},\; \vec{y} \rangle
+   = \langle \vec{p}',\; \vec{y} \rangle.
+\end{align*}
+So if $v = \langle \vec{p}, \vec{y} \rangle = P(z)$, the check passes.
+
+\paragraph{Binding intuition}
+
+If the two checks both pass and $v_{\vec{d}} = \langle \vec{d}, \vec{y} \rangle$, then:
+\begin{align*}
+  ev + v_{\vec{d}} &= \langle \vec{p}', \vec{y} \rangle = \langle e\vec{p} + \vec{d}, \vec{y} \rangle
+                    = e \langle \vec{p}, \vec{y} \rangle + \langle \vec{d}, \vec{y} \rangle,
+\end{align*}
+which implies $ev = e \langle \vec{p}, \vec{y} \rangle$, i.e.\ $v = P(z)$ (as long as $e \neq 0$, which happens with overwhelming probability).
+
+\begin{remark}[Proof Size]
+The proof consists of $C_1 \in \mathbb{G}$, $v_{\vec{d}} \in \Z_p$, and $\vec{p}' \in \Z_p^{n+1}$, $r_{\vec{p}'} \in \Z_p$.  The dominant term is $\vec{p}'$, which has $n+1$ field elements.  Hence the proof size is \textbf{linear} in $n$ (the degree bound).  This is why the scheme is called ``a PC with linear-sized proofs.''
+\end{remark}
+
+%----------------------------------------------------------------------
+\section{Interactive Oracle Proofs (IOPs)}
+%----------------------------------------------------------------------
+
+We now introduce a powerful proof model that generalizes both interactive proofs and PCPs: the \emph{interactive oracle proof} (IOP).
+
+\subsection{Definition of IOPs}
+
+\begin{definitionbox}[Definition: Interactive Oracle Proof (IOP)]
+An \textbf{Interactive Oracle Proof (IOP)} for a relation $\mathcal{R}$ is an interactive protocol between a prover $\prover_{\mathrm{IOP}}(\mathsf{x}, \mathsf{w})$ and a verifier $\verifier_{\mathrm{IOP}}(\mathsf{x})$ proceeding in $k$ rounds.
+
+In each round $i = 1, \ldots, k$:
+\begin{enumerate}
+  \item The prover sends an \emph{oracle message} $\Pi_i$ (a string/function that the verifier can query).
+  \item The verifier makes \emph{oracle queries} to $\Pi_i$ (and to previous oracles $\Pi_1, \ldots, \Pi_{i-1}$), then sends a challenge $\rho_i$.
+\end{enumerate}
+
+The verifier has oracle access to the prover's messages---it does not receive the full strings $\Pi_i$, but can query individual positions (or evaluations).  At the end, the verifier outputs 0 or 1.
+\end{definitionbox}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=2.5cm,
+  arr/.style={-{Stealth}, thick},
+  box/.style={draw, rounded corners, minimum width=2cm, minimum height=4cm, font=\small},
+  oracle/.style={draw, minimum width=3cm, minimum height=0.5cm, font=\scriptsize},
+  font=\small
+]
+  % Prover box
+  \node[box] (P) at (0,0) {};
+  \node[above=0pt of P, font=\small\bfseries] {$\mathbf{P}_{\mathrm{IOP}}(\mathsf{x},\mathsf{w})$};
+
+  % Verifier box
+  \node[box] (V) at (8,0) {};
+  \node[above=0pt of V, font=\small\bfseries] {$\mathbf{V}_{\mathrm{IOP}}(\mathsf{x})$};
+
+  % Round 1: oracle Pi_1
+  \node[oracle] (pi1) at (4, 1.3) {$\Pi_1$};
+  \draw[arr] (0.5, 1.3) -- (pi1.west);
+  % verifier queries Pi1
+  \draw[-{Stealth}, dashed, thick] (V.north west) to[bend left=20] (pi1.east);
+  % rho_1
+  \draw[arr] (7.5, 0.5) -- (0.5, 0.5) node[midway, above] {$\rho_1$};
+
+  % Round 2: oracle Pi_2
+  \node[oracle] (pi2) at (4, -0.4) {$\Pi_2$};
+  \draw[arr] (0.5, -0.4) -- (pi2.west);
+  \draw[-{Stealth}, dashed, thick] (V.west) to[bend left=10] (pi2.east);
+  % rho_2
+  \draw[arr] (7.5, -1.1) -- (0.5, -1.1) node[midway, above] {$\rho_2$};
+
+  % dots
+  \node at (4, -1.6) {$\vdots$};
+
+  % Round k: oracle Pi_k
+  \node[oracle] (pik) at (4, -2.2) {$\Pi_k$};
+  \draw[arr] (0.5, -2.2) -- (pik.west);
+  \draw[-{Stealth}, dashed, thick] (V.south west) to[bend right=20] (pik.east);
+  % rho_k
+  \draw[arr] (7.5, -2.9) -- (0.5, -2.9) node[midway, above] {$\rho_k$};
+\end{tikzpicture}
+\end{center}
+
+\begin{remark}
+The key feature of IOPs is that the verifier has \emph{oracle access} to the prover's messages: the verifier can query specific positions or evaluations of $\Pi_i$ without reading the entire string.  This makes the verifier efficient even when the prover's messages are very long.  (Image concept from Chiesa--Yogev.)
+\end{remark}
+
+\subsection{Polynomial IOPs (PIOPs)}
+
+A \textbf{Polynomial IOP (PIOP)} is a specialization of an IOP where each oracle message $\Pi_i$ is a \emph{polynomial} (of bounded degree).  The verifier's oracle queries are \emph{evaluation queries}: given a point, the oracle returns the polynomial evaluated at that point.
+
+\begin{definitionbox}[Definition: Polynomial IOP (PIOP)]
+A \textbf{Polynomial IOP} for a relation $\mathcal{R}$ is an IOP where:
+\begin{itemize}
+  \item Each prover message $\Pi_i$ is a polynomial $P_i$ with $\deg(P_i) < d_i$ (for some declared bound $d_i$).
+  \item Each verifier oracle query is an \emph{evaluation}: given a point $r$, the verifier receives $P_i(r)$.
+  \item At the end of round $i$, the verifier sends a new challenge $\rho_i$ (which may depend on all previously received evaluation answers).
+\end{itemize}
+\end{definitionbox}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=2cm,
+  arr/.style={-{Stealth}, thick},
+  box/.style={draw, rounded corners, minimum width=2.2cm, minimum height=4.2cm, font=\small},
+  polybox/.style={draw, minimum width=3.5cm, minimum height=0.55cm, font=\scriptsize, align=left},
+  evalbox/.style={draw, minimum width=2.2cm, minimum height=0.45cm, font=\scriptsize},
+  font=\small
+]
+  % Prover box
+  \node[box] (P) at (0,0) {};
+  \node[above=1pt of P, font=\small\bfseries] {$\mathbf{P}_{\mathrm{pIOP}}(\mathsf{x},\mathsf{w})$};
+
+  % Verifier box
+  \node[box] (V) at (9,0) {};
+  \node[above=1pt of V, font=\small\bfseries] {$\mathbf{V}_{\mathrm{pIOP}}(\mathsf{x})$};
+
+  % Round 1
+  \node[polybox] (p1) at (4.5, 1.5) {poly $P_1$, $\deg(P_1) < d_1$};
+  \draw[arr] (0.6, 1.5) -- (p1.west) node[above, midway, font=\scriptsize] {$\Pi_1$};
+  \node[evalbox] (e1) at (8.2, 2.1) {Eval $P_1$ at $r$};
+  \draw[-{Stealth}, dashed] (V.north) -- (e1.south);
+  % return value
+  \node[evalbox] (v1) at (6.5, 0.9) {$P_1(r) = v$};
+  \draw[arr] (8.6, 0.7) -- (0.6, 0.7) node[midway, above, font=\scriptsize] {$\rho_1$};
+
+  % Round 2
+  \node[polybox] (p2) at (4.5, -0.2) {poly $P_2$, $\deg(P_2) < d_2$};
+  \draw[arr] (0.6, -0.2) -- (p2.west) node[above, midway, font=\scriptsize] {$\Pi_2$};
+  \node[evalbox] (e2) at (8.2, 0.35) {Eval $P_2$ at $s$};
+  \node[evalbox] (v2) at (6.5, -0.75) {$P_2(s) = x$};
+  \draw[arr] (8.6, -1.0) -- (0.6, -1.0) node[midway, above, font=\scriptsize] {$\rho_2$};
+
+  % dots
+  \node at (4.5, -1.5) {$\vdots$};
+
+  % Round k
+  \node[polybox] (pk) at (4.5, -2.2) {poly $P_k$, $\deg(P_k) < d_k$};
+  \draw[arr] (0.6, -2.2) -- (pk.west) node[above, midway, font=\scriptsize] {$\Pi_k$};
+  \node[evalbox] (ek) at (8.2, -1.65) {Eval $P_k$ at $t$};
+  \node[evalbox] (vk) at (6.5, -2.85) {$P_k(t) = z$};
+  \draw[arr] (8.6, -3.1) -- (0.6, -3.1) node[midway, above, font=\scriptsize] {$\rho_k$};
+\end{tikzpicture}
+\end{center}
+
+\begin{remark}
+In a PIOP, the prover's messages are polynomials and the verifier's queries are point evaluations.  This is an idealized model: in a real system, each polynomial oracle is implemented by a \emph{polynomial commitment scheme}.  The resulting compiled protocol is a non-interactive argument of knowledge (after applying the Fiat--Shamir transform).
+\end{remark}
+
+\subsection{Sumcheck as a PIOP}
+
+The sumcheck protocol can be naturally cast as a PIOP.  In each round $j = 1, \ldots, \ell$, the prover sends the univariate polynomial $g_j$ as a polynomial oracle; the verifier makes two oracle queries ($g_j(0)$ and $g_j(1)$, and also $g_{j-1}(r_{j-1})$) to perform the consistency check.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, fonttitle=\bfseries,
+                  title={Sumcheck as a PIOP}]
+
+\begin{center}
+\begin{tabular}{p{0.45\textwidth} p{0.45\textwidth}}
+\hline
+\textbf{Sumcheck $\prover(g, H)$} & \textbf{Sumcheck $\verifier^{\mathcal{O}_g}(H)$} \\
+\hline
+\multicolumn{2}{l}{\textbf{Round 1:}} \\
+Compute $g_1(X_1)$ as
+$\displaystyle\sum_{x_2,\ldots,x_\ell \in \bits} g(X_1, x_2, \ldots, x_\ell)$
+&  \\
+$\xrightarrow{\quad \mathcal{O}_{g_1} \quad}$ &
+Check $H = \mathcal{O}_{g_1}(0) + \mathcal{O}_{g_1}(1)$ by querying $\mathcal{O}_{g_1}$ \\
+& $r_1 \xleftarrow{\$} \F$ \\
+$\xleftarrow{\quad r_1 \quad}$ & \\
+\hline
+\multicolumn{2}{l}{\textbf{Round $j$ (in general):}} \\
+Compute $g_j(X_j)$ as
+$\displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \bits} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
+& \\
+$\xrightarrow{\quad \mathcal{O}_{g_j} \quad}$ &
+Query $\mathcal{O}_{g_{j-1}}$ and $\mathcal{O}_{g_j}$ to \\
+& check $\mathcal{O}_{g_{j-1}}(r_{j-1}) = \mathcal{O}_{g_j}(0) + \mathcal{O}_{g_j}(1)$ \\
+& $r_j \xleftarrow{\$} \F$ \\
+$\xleftarrow{\quad r_j \quad}$ & \\
+\hline
+\multicolumn{2}{l}{\textbf{Final round $\ell$:}} \\
+$g_\ell \leftarrow g(r_1, \ldots, r_{\ell-1}, X_\ell)$ & \\
+$\xrightarrow{\quad \mathcal{O}_{g_\ell} \quad}$ &
+Query $\mathcal{O}_{g_{\ell-1}}$ and $\mathcal{O}_{g_\ell}$ to \\
+& check $\mathcal{O}_{g_{\ell-1}}(r_{\ell-1}) = \mathcal{O}_{g_\ell}(0) + \mathcal{O}_{g_\ell}(1)$ \\
+& $r_\ell \xleftarrow{\$} \F$ \\
+& Query/check $\mathcal{O}_{g_\ell}(r_\ell) = \mathcal{O}_g(r_1, \ldots, r_\ell)$ \\
+& If all checks pass: Return true \\
+& Else return false \\
+\hline
+\end{tabular}
+\end{center}
+\end{tcolorbox}
+
+\begin{remark}[Pop Quiz: Degree Bound for $g_i$ Oracles]
+\textbf{Q: What is the degree bound for the $g_i$ oracles sent during the sumcheck proof?}
+
+\medskip
+Each polynomial $g_j(X_j)$ is obtained by summing $g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$ over Boolean assignments to the remaining variables $x_{j+1}, \ldots, x_\ell$.  Since $g$ has individual degree $\le d$ in each variable, the polynomial $g_j$ is a univariate of degree $\le d$.
+
+Hence the degree bound for each $g_i$ oracle is $d$ (the maximal individual degree of $g$).
+\end{remark}
+
+\begin{remark}[Sumcheck Efficiency as a PIOP]
+The sumcheck PIOP has the following efficiency:
+\begin{itemize}
+  \item \textbf{Number of rounds:} $\ell$ (one per variable).
+  \item \textbf{Oracle messages:} $\ell$ polynomials, each of degree $\le d$ (so each has $d+1$ coefficients).
+  \item \textbf{Verifier queries:} $O(\ell)$ evaluation queries (two per round plus the final check on $g$).
+  \item \textbf{Verifier time:} $O(\ell)$ field operations plus one oracle access to $g$.
+  \item \textbf{Communication (in compiled version):} If oracles are instantiated with a PC, communication is $O(\ell d)$ field elements.
+\end{itemize}
+\end{remark}
+
+%----------------------------------------------------------------------
+\section{Summary}
+%----------------------------------------------------------------------
+
+\begin{importantbox}[Key Takeaways from Lecture 7]
+\begin{enumerate}
+  \item \textbf{Sumcheck soundness:} The sumcheck protocol has soundness error $\ell d / |\F|$ against any malicious prover.  The proof proceeds by a union bound over all $\ell$ rounds, using Schwartz--Zippel at each step.
+
+  \item \textbf{Regular commitments:} Commitment schemes have hiding (the commitment reveals nothing about the message) and binding (you cannot open to two different messages) security.  Pedersen commitments are perfectly hiding and computationally binding, and are additively homomorphic.
+
+  \item \textbf{Polynomial commitments:} A PC scheme allows committing to a polynomial and later proving evaluations.  The key security notion is \emph{evaluation binding}: an adversary cannot produce two valid proofs for different values at the same point.
+
+  \item \textbf{Linear-proof PC:} Using vector Pedersen commitments, we can build a PC where the commitment is $O(1)$ group elements and evaluation proofs are $O(n)$ field elements.  The opening protocol is a two-round interactive protocol.
+
+  \item \textbf{IOPs and PIOPs:} An IOP is an interactive proof where the verifier has oracle access to the prover's messages.  A PIOP specializes this so that oracle messages are polynomials and queries are evaluation queries.  Sumcheck is naturally a PIOP with $\ell$ rounds and degree-$d$ polynomial oracles.  PIOPs + polynomial commitment schemes compile to succinct non-interactive arguments.
+\end{enumerate}
+\end{importantbox}
+
+\end{document}

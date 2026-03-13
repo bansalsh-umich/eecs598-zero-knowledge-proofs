@@ -1,10 +1,12 @@
 use std::{
     fmt::Debug,
+    iter::Sum,
     ops::{Add, Mul, Neg, Sub},
     sync::RwLock,
 };
 
 use p1::{Field, Zero, curve::P256Point, zq::Zq};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// A trait representing an elliptic curve suitable for cryptographic operations.
 ///
@@ -23,6 +25,9 @@ pub trait EllipticCurve:
     + Eq
     + Send
     + Sync
+    + Serialize
+    + DeserializeOwned
+    + Sum
     + 'static
 {
     /// The field over which the curve equation is defined.

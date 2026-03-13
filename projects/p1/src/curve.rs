@@ -5,12 +5,14 @@ use std::{
 };
 
 use crate::{
+    FromBytes,
     moduli::{P256, P256CurveOrder},
     zq::{MontgomeryZq, Zq},
 };
 
 use num_traits::{Inv, One, Zero};
 use rand::rand_core::le;
+use serde::{Deserialize, Serialize};
 
 ///The prime defining the underlying field of the curve.
 /// Note that this prime is equal to three mod four,
@@ -63,7 +65,7 @@ fn extract_window(scalar: &Zq<P256CurveOrder>, start: usize, w: usize) -> u64 {
     digit
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 struct PrivateZST;
 
 /// A point on the NIST P-256 elliptic curve.
@@ -127,7 +129,7 @@ struct PrivateZST;
 ///
 /// Use the [`P256Point::point`] constructor to create valid points; it checks that
 /// the coordinates satisfy the curve equation.
-#[derive(Copy, Clone, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub enum P256Point {
     ///The point at infinity
     #[default]
@@ -140,6 +142,7 @@ pub enum P256Point {
         y: Zq<P256>,
         // See above!
         #[allow(private_interfaces)]
+        #[serde(skip)]
         _priv: PrivateZST,
     },
 }

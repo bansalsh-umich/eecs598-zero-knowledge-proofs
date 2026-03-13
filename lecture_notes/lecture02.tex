@@ -1,0 +1,386 @@
+%
+% EECS 498/CSE 598: Zero-Knowledge Proofs
+% Lecture 2: Arithmetic for Cryptography
+% Instructor: Paul Grubbs
+% University of Michigan, Winter 2026
+%
+% Template based on standard CS theory lecture notes style.
+%
+
+\documentclass[11pt]{article}
+
+%----------------------- Packages -----------------------
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
+
+%----------------------- Page style -----------------------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 2: Arithmetic for Cryptography}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+%----------------------- Macros -----------------------
+% \gcd is already defined; \lcm and \ord are not
+
+
+
+%=============================================================
+\begin{document}
+%=============================================================
+
+%----------------------- Title block -----------------------
+\begin{center}
+  {\Large \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}} \\[4pt]
+  {\large \textbf{Lecture 2: Arithmetic for Cryptography}} \\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+   \texttt{paulgrub@umich.edu} \quad Beyster 4709} \\[2pt]
+  {\normalsize University of Michigan \quad Winter 2026}
+\end{center}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Agenda -----------------------
+\paragraph{Agenda}
+\begin{enumerate}[label=(\arabic*)]
+  \item Announcements
+  \item Overview of multiprecision arithmetic
+  \item Arithmetic modulo a prime
+  \item Finite fields
+  \item Engineering math libraries for cryptography
+\end{enumerate}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Announcements -----------------------
+\paragraph{Announcements}
+\begin{itemize}
+  \item Project 1 is online---start if you haven't yet!
+  \item The autograder is working.
+  \item 598 students: please stay behind at the end of class.
+\end{itemize}
+
+\paragraph{Background reading}
+The material in this lecture corresponds to modern cryptographic
+foundations.  For further background, see Chapters 1--4 of Shoup,
+\emph{A Computational Introduction to Number Theory and Algebra}.
+
+%=============================================================
+\section{Multiprecision Arithmetic}
+%=============================================================
+
+\begin{tcolorbox}[colback=gray!8, colframe=gray!50, title=Motivating quote]
+``God created the integers \ldots but humans made the mistake of
+creating computers.''
+\end{tcolorbox}
+
+Modern cryptography routinely operates on integers hundreds or
+thousands of bits long---far exceeding the native word size of any
+processor.  This section reviews how such \emph{multiprecision}
+arithmetic is implemented in practice.
+
+%------------------------------------------------------------
+\subsection{Limb Representation}
+%------------------------------------------------------------
+
+Computer memory is split into fixed-sized \emph{words}.  To perform
+arithmetic on large integers, we store a number across multiple words,
+called \emph{limbs}.  Concretely, pick a base $B = 2^w$ where $w$ is
+the word size (e.g., $w = 64$).  Any non-negative integer $n$ can be
+written uniquely as
+\[
+  n \;=\; d_0 + d_1 B + d_2 B^2 + \cdots + d_k B^k,
+  \qquad 0 \le d_i < B,
+\]
+where $(d_0, d_1, \ldots, d_k)$ is the sequence of limbs (least
+significant first).  This is exactly positional notation in base $B$.
+
+Integer operations (addition, subtraction, multiplication) are then
+performed \emph{limb-wise} using the same schoolbook algorithms taught
+for decimal arithmetic, but in base $B$.  For example, addition
+propagates carries between limbs just as in decimal addition:
+\[
+  \underbrace{247}_{\text{addend}} +
+  \underbrace{146}_{\text{addend}} =
+  \underbrace{393}_{\text{sum}}.
+\]
+
+%------------------------------------------------------------
+\subsection{Long Integer Division and the GCD}
+%------------------------------------------------------------
+
+\begin{fact}[Division Algorithm]
+  \label{fact:division}
+  For any $a, b \in \Z$ with $b \neq 0$, there exist \emph{unique}
+  integers $q$ (quotient) and $r$ (remainder) such that
+  \[
+    a = b q + r, \qquad 0 \le r < |b|.
+  \]
+\end{fact}
+
+\begin{fact}[Greatest Common Divisor]
+  \label{fact:gcd}
+  For all $a, b \in \Z$, there exists a unique largest positive integer
+  $d$ such that $d \mid a$ and $d \mid b$.  This integer is called the
+  \emph{greatest common divisor} of $a$ and $b$, written
+  $d = \gcd(a, b)$.
+\end{fact}
+
+\begin{fact}[B\'ezout's Identity]
+  \label{fact:bezout}
+  For all $a, b \in \Z$, there exist integers $x, y \in \Z$ such that
+  \[
+    ax + by = \gcd(a, b).
+  \]
+  The integers $x$ and $y$ are called \emph{B\'ezout coefficients}.
+\end{fact}
+
+%------------------------------------------------------------
+\subsection{Euclid's Algorithm and Its Extension}
+%------------------------------------------------------------
+
+The classical Euclidean algorithm computes $\gcd(a, b)$ by repeatedly
+applying the identity $\gcd(a, b) = \gcd(b,\, a \bmod b)$.  The
+\emph{Extended} Euclidean Algorithm (EEA) also computes B\'ezout
+coefficients $(x, y)$.
+
+\begin{theorem}
+  If $a \ge b > 0$, the EEA makes at most $2\lfloor\log_2 a\rfloor$
+  recursive calls.
+\end{theorem}
+
+\begin{algorithm}
+\caption{$\textsc{ExtendedEuclid}(a,\, b)$}
+\begin{algorithmic}[1]
+\Require Positive integers $a \ge b > 0$.
+\Ensure $(x, y) \in \Z^2$ such that $ax + by = \gcd(a, b)$.
+\If{$b \mid a$}
+  \State \Return $(0,\, 1)$
+    \Comment{$\gcd(a,b) = b$ and $0 \cdot a + 1 \cdot b = b$}
+\Else
+  \State Let $a = bq + r$ with $r \in \{1, \ldots, b-1\}$
+  \State $(x',\, y') \gets \textsc{ExtendedEuclid}(b,\, r)$
+  \State \Return $(y',\; x' - q \cdot y')$
+\EndIf
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Correctness}
+We verify by induction that the algorithm returns correct B\'ezout
+coefficients.
+
+\begin{proof}
+  \textbf{Base case.} If $b \mid a$, then $\gcd(a, b) = b$ and
+  $0 \cdot a + 1 \cdot b = b = \gcd(a, b)$. \checkmark
+
+  \textbf{Inductive step.} Suppose $a = bq + r$ with $1 \le r < b$.
+  Observe that
+  \[
+    \gcd(a, b) = \gcd(b, r).
+  \]
+  \textit{Proof of this fact:} any common divisor of $a$ and $b$ divides
+  $r = a - bq$, so it is a common divisor of $b$ and $r$; by symmetry
+  the sets of common divisors coincide, so the greatest ones are equal.
+
+  By the inductive hypothesis the recursive call returns $(x', y')$
+  satisfying
+  \[
+    bx' + ry' = \gcd(b, r) = \gcd(a, b).
+  \]
+  Substituting $r = a - bq$:
+  \[
+    bx' + (a - bq)\,y' = \gcd(a, b)
+    \;\implies\;
+    a y' + b(x' - qy') = \gcd(a, b).
+  \]
+  Therefore the coefficients $x = y'$ and $y = x' - qy'$ satisfy
+  $ax + by = \gcd(a, b)$, which is exactly what the algorithm returns.
+\end{proof}
+
+%=============================================================
+\section{Arithmetic Modulo a Prime}
+%=============================================================
+
+%------------------------------------------------------------
+\subsection{Modular Arithmetic Basics}
+%------------------------------------------------------------
+
+\begin{definition}
+  For integers $a$ and a positive integer $p$, define
+  \[
+    a \bmod p \;\coloneqq\; \text{the unique } r \in \{0, 1, \ldots, p-1\}
+    \text{ such that } p \mid (a - r).
+  \]
+  We write $a \equiv b \pmod{p}$ (read ``$a$ is congruent to $b$
+  modulo $p$'') if $p \mid (a - b)$.
+\end{definition}
+
+\begin{example}
+  $-13 \equiv 7 \pmod{20}$ since $20 \mid (-13 - 7)$.
+\end{example}
+
+\paragraph{Arithmetic properties}  Congruences are compatible with
+addition and multiplication: if $a \equiv c \pmod{p}$ and
+$b \equiv d \pmod{p}$, then
+\[
+  a + b \equiv c + d \pmod{p}
+  \qquad \text{and} \qquad
+  a \cdot b \equiv c \cdot d \pmod{p}.
+\]
+
+%------------------------------------------------------------
+\subsection{Multiplicative Inverses}
+%------------------------------------------------------------
+
+\begin{definition}
+  An integer $x$ is a \emph{multiplicative inverse} of $a$ modulo $p$
+  if $ax \equiv 1 \pmod{p}$.  We write $x = a^{-1} \bmod p$.
+\end{definition}
+
+\begin{fact}
+  For $a, p \in \Z$, a multiplicative inverse of $a$ modulo $p$ exists
+  if and only if $\gcd(a, p) = 1$.  When it exists, it can be computed
+  via the EEA: B\'ezout's identity gives $ax + py = 1$, so
+  $ax \equiv 1 \pmod{p}$.
+\end{fact}
+
+In particular, when $p$ is prime every $a \in \{1, \ldots, p-1\}$ has
+$\gcd(a, p) = 1$ and therefore has a multiplicative inverse modulo $p$.
+
+%------------------------------------------------------------
+\subsection{Fermat's Little Theorem and Orders}
+%------------------------------------------------------------
+
+\begin{theorem}[Fermat's Little Theorem]
+  Let $p$ be a prime and $a \in \Z$ with $p \nmid a$.  Then
+  \[
+    a^{p-1} \equiv 1 \pmod{p}.
+  \]
+\end{theorem}
+
+\begin{definition}[Order of an element]
+  The \emph{order} of $a$ modulo $p$, written $\ord_p(a)$, is the
+  smallest positive integer $k$ such that $a^k \equiv 1 \pmod{p}$.
+\end{definition}
+
+\begin{fact}
+  $\ord_p(a) \mid (p-1)$.
+\end{fact}
+
+\paragraph{Arithmetic mod $p$ ``just works''}
+When $p$ is prime, arithmetic modulo $p$ satisfies all the familiar
+field axioms: commutativity, associativity, and distributivity of $+$
+and $\times$; additive and multiplicative identities $0$ and $1$;
+additive inverses for every element; and multiplicative inverses for
+every nonzero element.  Concretely this means one can:
+\begin{itemize}
+  \item Solve systems of linear equations over $\Z/p\Z$.
+  \item Do arithmetic on elliptic curves defined over $\Z/p\Z$,
+    e.g., curves of the form $y^2 = x^3 + ax + b$.
+\end{itemize}
+
+%------------------------------------------------------------
+\subsection{Montgomery Arithmetic ($*$)}
+%------------------------------------------------------------
+
+Standard modular multiplication of $a$ and $b$ modulo $p$ requires an
+expensive division operation to reduce $a \cdot b$ modulo $p$.
+\emph{Montgomery arithmetic} avoids this cost by representing integers
+in \emph{Montgomery form}: $\bar{a} = aR \bmod p$, where
+$R = 2^k$ is chosen so that $R > p$ and $\gcd(R, p) = 1$ (easy when
+$p$ is odd).  Montgomery multiplication computes
+$\overline{a \cdot b} = ab R \bmod p$ using only additions and
+bit-shifts, replacing expensive divisions with cheaper reductions.
+
+\begin{remark}
+  Montgomery also contributed the \emph{Montgomery ladder} to fast
+  cryptography software.  We will discuss this technique in the next
+  lecture in the context of elliptic-curve scalar multiplication.
+\end{remark}
+
+%=============================================================
+\section{Finite Fields}
+%=============================================================
+
+\begin{definition}
+  The \emph{prime field} $\Fp = \Z/p\Z = \{0, 1, \ldots, p-1\}$
+  equipped with addition and multiplication modulo $p$ is a
+  \emph{finite field} of order $p$.
+\end{definition}
+
+\begin{fact}
+  Every finite field has order equal to a prime power $q = p^m$ for
+  some prime $p$ and positive integer $m$.  Conversely, for every
+  prime power $q$ there exists a unique (up to isomorphism) finite
+  field $\mathbb{F}_q$.
+\end{fact}
+
+\begin{fact}
+  The factorization of $p - 1$ determines the possible orders of
+  elements of $\Fp^{\times} = \Fp \setminus \{0\}$.  Specifically,
+  $\ord_p(a) \mid (p-1)$ for all $a \in \Fp^{\times}$.
+\end{fact}
+
+\begin{definition}[Primitive $k$-th root of unity]
+  An element $\omega \in \Fp^{\times}$ is a \emph{primitive $k$-th
+  root of unity} modulo $p$ if $\omega^k \equiv 1 \pmod{p}$ and $k$
+  is the smallest such positive integer (i.e., $\ord_p(\omega) = k$).
+\end{definition}
+
+\paragraph{Application: FFT over finite fields}
+If $p - 1$ is divisible by a large power of $2$, say $2^s \mid (p-1)$,
+then $\Fp$ contains a primitive $2^s$-th root of unity.  This enables
+the \emph{Number-Theoretic Transform} (NTT), a variant of the Fast
+Fourier Transform (FFT) defined entirely over $\Fp$ without floating-point
+arithmetic.  NTTs are a cornerstone of efficient polynomial multiplication
+in ZK proof systems.
+
+%=============================================================
+\section{Engineering Math Libraries for Cryptography}
+%=============================================================
+
+Implementing the arithmetic above correctly and securely is surprisingly
+subtle.  Key engineering concerns include:
+
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Correctness.}  Incorrect code or faulty hardware can
+    silently produce wrong results---and in cryptographic settings,
+    wrong arithmetic can reveal secret keys.
+
+  \item \textbf{Randomness.}  Many cryptographic primitives require
+    high-quality randomness.  Poor randomness sources have led to
+    catastrophic real-world key recovery attacks.
+
+  \item \textbf{Side-channel resistance.}  Implementations must be
+    designed to resist \emph{side-channel attacks}: adversaries can
+    observe execution time, power consumption, or electromagnetic
+    emanations to infer secret values.  Constant-time implementations
+    avoid secret-dependent branches and memory access patterns.
+
+  \item \textbf{Error handling.}  Errors (e.g., hardware faults,
+    invalid inputs) must be detected and handled correctly.
+    Propagating or ignoring errors in cryptographic code can open
+    fault-injection attack surfaces.
+\end{enumerate}
+
+%=============================================================
+\end{document}

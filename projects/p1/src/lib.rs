@@ -54,6 +54,32 @@ pub trait Field:
     + DeserializeOwned
     + 'static
     + Random
+    + FromBytes
 {
     type Order: moduli::PrimeModulus;
+}
+
+pub trait FromBytes: Sized {
+    const BYTES_NEEDED: usize;
+    fn from_bytes(bytes: &[u8]) -> Self;
+}
+
+impl FromBytes for u8 {
+    const BYTES_NEEDED: usize = 1;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0]
+    }
+}
+
+impl<const N: usize, T: FromBytes + std::fmt::Debug> FromBytes for [T; N] {
+    const BYTES_NEEDED: usize = N * T::BYTES_NEEDED;
+    fn from_bytes(bytes: &[u8]) -> Self {
+        assert_eq!(bytes.len(), Self::BYTES_NEEDED);
+        bytes
+            .chunks(T::BYTES_NEEDED)
+            .map(|chunk| T::from_bytes(chunk))
+            .collect::<Vec<T>>()
+            .try_into()
+            .unwrap()
+    }
 }

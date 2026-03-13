@@ -1,0 +1,592 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 6: Interactive Proofs and the Sumcheck Protocol}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\begin{document}
+
+%--------------------------------------------------------------------------
+% Title block
+%--------------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026}\\[4pt]
+  {\large \textbf{Lecture 6: Interactive Proofs and the Sumcheck Protocol}}\\[4pt]
+  {\large Instructor: Paul Grubbs \quad (\href{mailto:paulgrub@umich.edu}{paulgrub@umich.edu})}\\[2pt]
+  {\normalsize Beyster 4709}
+\end{center}
+
+\vspace{0.5em}
+\hrule
+\vspace{1em}
+
+%--------------------------------------------------------------------------
+% Agenda
+%--------------------------------------------------------------------------
+\section*{Agenda}
+\begin{itemize}
+  \item Announcements
+  \item What is a ``backend''?
+  \item Interactive proofs
+  \item The sumcheck protocol
+  \item Analyzing sumcheck
+  \item (If time) Applications of sumcheck
+\end{itemize}
+
+\newpage
+
+%--------------------------------------------------------------------------
+\section{Announcements}
+%--------------------------------------------------------------------------
+
+\begin{itemize}
+  \item Project 1 is online.
+  \item Autograder is working.
+  \item \textit{(Handwritten annotation:)} P2 release delayed $\to$ Friday; due date pushed back.
+  \item \textit{(Handwritten annotation:)} P1 grace period.
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\section{What Is a ``Backend''?}
+%--------------------------------------------------------------------------
+
+\subsection{Overview of the ZKP Software Stack}
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!50!black, title={Central Question}]
+  \textbf{Question:} How does ZKP software get used to solve a real problem?
+\end{tcolorbox}
+
+\medskip
+The ZKP software stack consists of two major components: a \emph{frontend} and a \emph{backend}.
+
+\subsubsection*{Frontend}
+
+First, use the frontend component to:
+\begin{enumerate}
+  \item \textbf{Write a human-readable program} in a ZK programming language.
+    \begin{itemize}
+      \item The program captures requirements of the problem in typical programming abstractions.
+      \item Program $P$ takes \emph{public input} $x$ and \emph{private witness} $w$, and outputs $0$ or $1$.
+    \end{itemize}
+  \item \textbf{Run a compiler} on $P$ to transform it into an algebraic representation $C$.
+    \begin{itemize}
+      \item Also need to generate (or have the programmer write) an auxiliary program $E$ that
+            performs \emph{witness extension}: given inputs $x, w$ for $P$, it produces extended inputs
+            $x', w'$ for $C$.
+      \item \textbf{Required property:} for all $x, w$,
+            \[
+              P(x,\, w) = 1 \iff C(x',\, w') = 1.
+            \]
+    \end{itemize}
+\end{enumerate}
+
+The frontend's output is $P$, $C$, and $E$.
+
+\subsubsection*{Backend}
+
+Given concrete $x, w$ such that $P(x, w) = 1$, use the \underline{backend} to generate and verify proofs about $P$, $x$, $w$.
+
+The backend implements two interfaces:
+\[
+  \verifyproof(pp,\, P,\, C,\, E,\, x,\, \pi) \;\to\; \bits
+  \qquad
+  \prove(pp,\, P,\, C,\, E,\, x,\, w) \;\to\; \pi
+\]
+
+\begin{itemize}
+  \item The program $\prove$ first runs $E$ on $x, w$ to get $x', w'$, then runs a ZK prover to
+        generate a proof that $C, x'$ has a corresponding $w'$.
+  \item The program $\verifyproof$ first uses $E$ to turn $x$ into $x'$, then verifies proof $\pi$ using
+        the ZK verifier.
+\end{itemize}
+
+\subsection{How to Build a Backend}
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!50!black, title={Central Question}]
+  \textbf{Question:} How is the backend protocol built?
+\end{tcolorbox}
+
+\medskip
+The backend is constructed through the following sequence of steps:
+
+\begin{enumerate}
+  \item \textbf{Start from the algebraic representation.} Assume we already have $C$, $x'$, $w'$,
+        and that $C$ is in a ``convenient'' algebraic form such as R1CS.
+
+  \item \textbf{Express as polynomials.} Express $C$, $x'$, $w'$ as polynomials (for example, via
+        univariate or multilinear extensions).
+
+  \item \textbf{Identify a polynomial property.} Come up with a relationship between, or property of,
+        these polynomials such that:
+        \begin{itemize}
+          \item The property holds if and only if $C(x', w') = 1$.
+        \end{itemize}
+
+  \item \textbf{Design the protocol in an ``ideal'' model.} Design a protocol between a prover and
+        verifier using \emph{Interactive Oracle Proofs} (IOPs):
+        \begin{itemize}
+          \item IOPs are like interactive proofs but force honest prover behavior.
+          \item The protocol lets the prover convince the verifier that these particular polynomials
+                have the required property.
+        \end{itemize}
+
+  \item \textbf{Use cryptography to ``compile'' the IOP} to a real protocol:
+        \begin{enumerate}
+          \item Compile IOP to an interactive argument of knowledge via polynomial commitments.
+          \item Remove interaction using the Fiat--Shamir transform.
+          \item Hide the witness (ZK) by blinding ``leaky'' parts of the proof with random data.
+        \end{enumerate}
+\end{enumerate}
+
+\begin{tcolorbox}[colback=gray!10, colframe=gray!60, title={Handwritten annotation: result of this pipeline}]
+  \centerline{\textbf{zkSNARK}}
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=blue!10, colframe=blue!40!black]
+  Right now this is all (intentionally) very abstract. The next two projects and several weeks of
+  class will make this very concrete.
+\end{tcolorbox}
+
+\bigskip
+
+The overall architecture is illustrated below:
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=1.6cm and 2.5cm,
+    box/.style={draw, rounded corners, minimum width=2.6cm, minimum height=1.0cm,
+                text centered, font=\small},
+    arr/.style={-{Stealth}, thick}
+  ]
+  \node[box, fill=green!15]  (prog)  {Program $P$ (ZK language)};
+  \node[box, fill=orange!15, right=of prog] (compiler) {Compiler};
+  \node[box, fill=yellow!20, right=of compiler] (alg) {Algebraic repr.\ $C$ + witness ext.\ $E$};
+  \node[box, fill=red!15, below=1.2cm of alg] (iop) {IOP design};
+  \node[box, fill=purple!15, below=1.2cm of iop] (zksnark) {zkSNARK};
+
+  \draw[arr] (prog) -- (compiler);
+  \draw[arr] (compiler) -- (alg);
+  \draw[arr] (alg) -- (iop);
+  \draw[arr] (iop) -- node[right, font=\small, text width=2.5cm]{poly.\ commitments + Fiat-Shamir + ZK} (zksnark);
+\end{tikzpicture}
+\end{center}
+
+%--------------------------------------------------------------------------
+\section{Interactive Proofs}
+%--------------------------------------------------------------------------
+
+\subsection{Definition}
+
+An \emph{interactive proof} (IP) is a protocol between two parties: a \emph{prover}
+$\prover$ and a \emph{verifier} $\verifier$.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, title={Definition: Interactive Proof System}]
+  An interactive proof system for a language $L$ is a pair $\langle \prover, \verifier \rangle$
+  where:
+  \begin{itemize}
+    \item $\prover(x)$ runs on input $x$ and produces no private output (from $\verifier$'s
+          perspective, $\prover$ has no output).
+    \item $\verifier(x)$ runs on input $x$ and outputs $\bits$.
+    \item A \textbf{round} is a pair of two-way ($\rightleftharpoons$) messages; $\prover$ sends the last message in each round.
+    \item \textbf{Public coin:} $\verifier$ sends uniformly random messages (its ``challenges'').
+  \end{itemize}
+
+  We write:
+  \[
+    \mathsf{out}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]
+    \qquad \text{and} \qquad
+    \mathsf{view}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]
+  \]
+  for the verifier's output and view in the interaction.
+\end{tcolorbox}
+
+\medskip
+The notation $\prover(x) \leftrightarrow \verifier(x)$ denotes the execution of the interactive
+protocol on public input $x$. An IP is ``for'' a language $L$: the goal is for $\prover$ to
+convince $\verifier$ that $x \in L$.
+
+\subsection{Security Properties}
+
+An IP $\langle \prover, \verifier \rangle$ for a language $L$ (with associated relation $R_L$)
+must satisfy the following two properties.
+
+\begin{tcolorbox}[colback=green!8, colframe=green!50!black, title={Completeness}]
+  For all $(x, w) \in R_L$:
+  \[
+    \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover(x, w) \leftrightarrow \verifier(x)\right] = 1\right] = 1.
+  \]
+  That is, an honest prover with a valid witness always convinces the verifier.
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=red!8, colframe=red!50!black, title={$\varepsilon$-Soundness}]
+  For all $x \notin L$ and for all (potentially malicious) provers $\prover^*$:
+  \[
+    \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover^*(x) \leftrightarrow \verifier(x)\right] = 1\right] \leq \varepsilon.
+  \]
+  That is, no cheating prover can convince the verifier to accept a false statement, except with
+  probability at most $\varepsilon$.
+\end{tcolorbox}
+
+\begin{remark}
+  In the top-right of the slide: ``IP for $L = \langle \prover, \verifier \rangle$''. This
+  reminds us that the interactive proof system is fully specified by the pair of algorithms.
+\end{remark}
+
+%--------------------------------------------------------------------------
+\section{The Sumcheck Protocol}
+%--------------------------------------------------------------------------
+
+\subsection{Problem Setup}
+
+The \textbf{sumcheck protocol} is a fundamental interactive proof that allows a prover to convince
+a verifier of the value of a sum of a multivariate polynomial evaluated over a boolean hypercube.
+
+\medskip
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=blue!60!black, title={Sumcheck Problem Statement}]
+  Let $g$ be an $\ell$-variate polynomial of maximal individual degree $d$ over a field $\F$.
+  \medskip
+
+  \textbf{Claim:} $\displaystyle\sum_{i \in \bits^\ell} g(i) = H$.
+
+  \medskip
+  The prover wants to convince the verifier that the claimed value $H$ is correct.
+\end{tcolorbox}
+
+\medskip
+\textit{(Handwritten annotations on slide:)} $g$ is $\ell$-variate over $\F$; $d$ is the maximal
+(individual) degree.
+
+\subsection{Protocol Description}
+
+The sumcheck protocol runs for $\ell$ rounds. In each round $j$, the prover sends a univariate
+polynomial $g_j(X_j)$ obtained by summing $g$ over all remaining free variables, and the verifier
+checks a consistency condition and sends a fresh random challenge.
+
+\bigskip
+
+\begin{tcolorbox}[colback=gray!5, colframe=gray!50, title={Sumcheck Protocol (full description)}]
+
+\textbf{Shared input:} polynomial $g$ (or oracle access to $g$), claimed sum $H$.
+
+\bigskip
+\begin{center}
+\begin{tikzpicture}[
+    node distance=0pt,
+    every node/.style={font=\small},
+    header/.style={fill=gray!20, draw, minimum width=5cm, minimum height=0.7cm, text centered},
+    cell/.style={draw, minimum width=5cm, minimum height=3.5cm, text width=4.7cm,
+                 align=left, inner sep=6pt}
+  ]
+  % Headers
+  \node[header] (ph) {$\mathsf{Sumcheck.Prover}(g, H)$};
+  \node[header, right=0pt of ph] (vh) {$\mathsf{Sumcheck.Verifier}(g, H)$};
+  % Round 1
+  \node[cell, below=0pt of ph] (p1) {%
+    Compute $g_1(X_1)$ as\\[4pt]
+    $\displaystyle\sum_{\substack{x_2,\ldots,x_v\\\in\bits}} g(X_1, x_2, \ldots, x_v)$
+  };
+  \node[cell, below=0pt of vh] (v1) {%
+    Check $H = g_1(0) + g_1(1)$\\[4pt]
+    $r_1 \xleftarrow{\$} \F$
+  };
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.3em}
+\begin{center}
+\begin{tikzpicture}[>=Stealth, thick, node distance=0pt]
+  \draw[->] (0,0) -- (6,0) node[midway, above]{\small $g_1$};
+  \draw[<-] (0,-0.8) -- (6,-0.8) node[midway, above]{\small $r_1$};
+\end{tikzpicture}
+\end{center}
+
+\bigskip
+\dotfill\ \textit{In round $j$ (for $j = 2, \ldots, \ell-1$):} \dotfill
+
+\bigskip
+\textbf{Prover:} Compute $g_j(X_j)$ as
+\[
+  \sum_{\substack{x_{j+1},\ldots,x_v \\ \in \bits}} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_v)
+\]
+
+\textbf{Verifier:} Upon receiving $g_j$:
+\begin{itemize}
+  \item Check $g_{j-1}(r_{j-1}) = g_j(0) + g_j(1)$
+  \item Sample $r_j \xleftarrow{\$} \F$
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth, thick]
+  \draw[->] (0,0) -- (6,0) node[midway, above]{\small $g_j$};
+  \draw[<-] (0,-0.8) -- (6,-0.8) node[midway, above]{\small $r_j$};
+\end{tikzpicture}
+\end{center}
+
+\bigskip
+\dotfill\ \textit{Final round ($j = \ell$):} \dotfill
+
+\bigskip
+\textbf{Prover:} Compute
+\[
+  g_v \;\leftarrow\; g(r_1, \ldots, r_{v-1}, X_v)
+\]
+(this is the polynomial $g$ with $x_1,\ldots,x_{v-1}$ substituted by the challenges).
+
+\textbf{Verifier:} Upon receiving $g_v$:
+\begin{enumerate}
+  \item Check $g_{v-1}(r_{v-1}) = g_v(0) + g_v(1)$
+  \item Sample $r_v \xleftarrow{\$} \F$
+  \item \textbf{Oracle query:} Check $g_v(r_v) = g(r_1, \ldots, r_v)$
+  \item If all checks pass: \textbf{Return true}
+  \item Else: \textbf{Return false}
+\end{enumerate}
+\end{tcolorbox}
+
+\subsection{Pseudocode Summary}
+
+\begin{algorithm}[H]
+  \caption{Sumcheck Protocol}
+  \begin{algorithmic}[1]
+    \State \textbf{Shared input:} $\ell$-variate polynomial $g$ over $\F$, claimed sum $H \in \F$
+    \Statex
+    \textit{// Round 1}
+    \State \textbf{Prover} computes $g_1(X_1) \gets \displaystyle\sum_{x_2,\ldots,x_\ell \in \bits} g(X_1, x_2, \ldots, x_\ell)$
+    \State \textbf{Prover} sends $g_1$ to \textbf{Verifier}
+    \State \textbf{Verifier} checks $H = g_1(0) + g_1(1)$; aborts if check fails
+    \State \textbf{Verifier} samples $r_1 \xleftarrow{\$} \F$ and sends $r_1$ to \textbf{Prover}
+    \Statex
+    \textit{// Rounds $j = 2, \ldots, \ell - 1$}
+    \For{$j = 2$ \textbf{to} $\ell - 1$}
+      \State \textbf{Prover} computes $g_j(X_j) \gets \displaystyle\sum_{x_{j+1},\ldots,x_\ell \in \bits} g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_\ell)$
+      \State \textbf{Prover} sends $g_j$ to \textbf{Verifier}
+      \State \textbf{Verifier} checks $g_{j-1}(r_{j-1}) = g_j(0) + g_j(1)$; aborts if check fails
+      \State \textbf{Verifier} samples $r_j \xleftarrow{\$} \F$ and sends $r_j$ to \textbf{Prover}
+    \EndFor
+    \Statex
+    \textit{// Final round}
+    \State \textbf{Prover} computes $g_\ell(X_\ell) \gets g(r_1, \ldots, r_{\ell-1}, X_\ell)$
+    \State \textbf{Prover} sends $g_\ell$ to \textbf{Verifier}
+    \State \textbf{Verifier} checks $g_{\ell-1}(r_{\ell-1}) = g_\ell(0) + g_\ell(1)$; aborts if check fails
+    \State \textbf{Verifier} samples $r_\ell \xleftarrow{\$} \F$
+    \State \textbf{Verifier} makes \textbf{oracle query}: checks $g_\ell(r_\ell) = g(r_1, \ldots, r_\ell)$; aborts if check fails
+    \State \textbf{Verifier} outputs $\mathsf{true}$
+  \end{algorithmic}
+\end{algorithm}
+
+\medskip
+
+\begin{remark}[Key structural insight]
+  At each round $j$, the polynomial $g_j(X_j)$ is a univariate polynomial of degree at most $d$
+  (the individual degree of $g$). Thus the prover can represent and send $g_j$ by sending $d+1$
+  field elements (its coefficients, or evaluations at $d+1$ points).
+
+  The final verifier check $g_\ell(r_\ell) = g(r_1, \ldots, r_\ell)$ is a single query to the
+  polynomial $g$, which in practice is replaced by an oracle or polynomial commitment query.
+\end{remark}
+
+\begin{remark}[Round structure diagram]
+  The protocol can be depicted as a ``ping-pong'' of messages:
+
+  \begin{center}
+  \begin{tikzpicture}[>=Stealth, thick, node distance=1.2cm and 5cm]
+    \node (P) [draw, minimum height=8cm, minimum width=1.5cm, align=center, fill=blue!10]
+          {\textbf{Prover}\\ $\prover$};
+    \node (V) [draw, right=5cm of P, minimum height=8cm, minimum width=1.5cm, align=center, fill=red!10]
+          {\textbf{Verifier}\\ $\verifier$};
+
+    % Round 1
+    \draw[->] ([yshift=-1.0cm]P.north east) -- ([yshift=-1.0cm]V.north west)
+          node[midway, above, font=\small]{$g_1$};
+    \draw[<-] ([yshift=-1.8cm]P.north east) -- ([yshift=-1.8cm]V.north west)
+          node[midway, above, font=\small]{$r_1$};
+
+    % Round 2
+    \draw[->] ([yshift=-2.8cm]P.north east) -- ([yshift=-2.8cm]V.north west)
+          node[midway, above, font=\small]{$g_2$};
+    \draw[<-] ([yshift=-3.6cm]P.north east) -- ([yshift=-3.6cm]V.north west)
+          node[midway, above, font=\small]{$r_2$};
+
+    % Dots
+    \node at ([yshift=-4.5cm, xshift=2.5cm]P.north east) {$\vdots$};
+
+    % Round ell
+    \draw[->] ([yshift=-5.5cm]P.north east) -- ([yshift=-5.5cm]V.north west)
+          node[midway, above, font=\small]{$g_\ell$};
+    \draw[<-] ([yshift=-6.3cm]P.north east) -- ([yshift=-6.3cm]V.north west)
+          node[midway, above, font=\small]{$r_\ell$};
+
+    % Oracle query label
+    \node[font=\small, right=0.2cm of V, yshift=-5.8cm, text width=3.2cm]
+          {+ oracle query\\$g(r_1,\ldots,r_\ell)$};
+  \end{tikzpicture}
+  \end{center}
+\end{remark}
+
+%--------------------------------------------------------------------------
+\section{Analyzing Sumcheck}
+%--------------------------------------------------------------------------
+
+\subsection{Soundness Theorem}
+
+The central security guarantee of the sumcheck protocol is a bound on the soundness error: the
+probability that a cheating prover can fool the verifier into accepting a false claimed sum.
+
+\begin{tcolorbox}[colback=yellow!10, colframe=orange!70!black, title={Theorem 1 (Soundness of Sumcheck)}]
+  \begin{theorem}[Soundness of the Sumcheck Protocol]
+    Let $g$ be an $\ell$-variate polynomial of maximal (individual) degree $d$ over the field $\F$.
+    Then for any malicious prover $\prover^*$ and any value
+    \[
+      H \;\neq\; \sum_{i \in \bits^\ell} g(i),
+    \]
+    we have
+    \[
+      \Pr\!\left[\mathsf{out}_{\verifier}\!\left[\prover^*(g, H) \leftrightarrow \verifier(g, H)\right] = 1\right]
+      \;\leq\; \frac{\ell d}{|\F|}.
+    \]
+  \end{theorem}
+\end{tcolorbox}
+
+\medskip
+\noindent
+This theorem says that if $H$ is the \emph{wrong} sum, then no cheating prover can convince the
+verifier to accept except with probability at most $\frac{\ell d}{|\F|}$.
+
+\subsubsection*{Interpretation of the Soundness Error}
+
+\begin{itemize}
+  \item The error $\frac{\ell d}{|\F|}$ is negligible whenever $|\F|$ is large (e.g., $|\F| \approx 2^{128}$)
+        and $\ell d \ll |\F|$.
+  \item The factor $\ell$ comes from applying the Schwartz--Zippel lemma once per round: in each
+        of the $\ell$ rounds, the cheating prover sends a degree-$d$ polynomial that is ``wrong'',
+        but the random challenge $r_j$ will only expose the lie with probability $\frac{d}{|\F|}$.
+        The union bound over all $\ell$ rounds gives $\frac{\ell d}{|\F|}$.
+\end{itemize}
+
+\subsubsection*{Proof Sketch}
+
+The proof proceeds by induction on the number of rounds $\ell$.
+
+\textbf{Base case ($\ell = 1$):} If $\ell = 1$, the prover sends a univariate polynomial
+$g_1(X_1)$ such that $g_1(0) + g_1(1) = H$. The honest polynomial would be $g_1^*(X_1) = g(X_1)$.
+Since $H \neq g(0) + g(1)$, we have $g_1 \neq g_1^*$ as polynomials, so $g_1 - g_1^*$ is a
+nonzero degree-$d$ polynomial. By the Schwartz--Zippel lemma,
+\[
+  \Pr_{r_1 \xleftarrow{\$} \F}\!\left[g_1(r_1) = g(r_1)\right] \;\leq\; \frac{d}{|\F|}.
+\]
+But the verifier checks $g_1(r_1) = g(r_1)$ (the final oracle check), so the cheating prover is
+caught except with probability $\frac{d}{|\F|}$.
+
+\textbf{Inductive step:} For general $\ell$, either the cheating prover's first message $g_1$ is
+the correct partial sum (in which case $g_1(0) + g_1(1) = \sum_{i \in \bits^\ell} g(i) \neq H$,
+so the verifier's first check catches the lie immediately), or $g_1$ differs from the correct
+partial sum polynomial. In the latter case, $g_1 - g_1^*$ is a nonzero degree-$d$ univariate
+polynomial, so by Schwartz--Zippel the random challenge $r_1$ satisfies $g_1(r_1) = g_1^*(r_1)$
+with probability at most $\frac{d}{|\F|}$. When $r_1$ is a ``good'' challenge (probability $\geq
+1 - \frac{d}{|\F|}$), the sub-problem reduces to a sumcheck on $\ell-1$ variables with a wrong
+claimed value, and the induction hypothesis bounds the cheating probability by $\frac{(\ell-1)d}{|\F|}$.
+The total soundness error is then:
+\[
+  \frac{d}{|\F|} + \frac{(\ell-1)d}{|\F|} = \frac{\ell d}{|\F|}.
+\]
+
+\subsection{Efficiency}
+
+\begin{itemize}
+  \item \textbf{Number of rounds:} $\ell$ (one per variable).
+  \item \textbf{Prover communication per round:} $d + 1$ field elements (the coefficients or
+        evaluations of the degree-$d$ univariate polynomial $g_j$).
+  \item \textbf{Total communication:} $O(\ell d)$ field elements.
+  \item \textbf{Verifier computation:} The verifier does $O(\ell)$ consistency checks (each $O(1)$
+        arithmetic), plus a single oracle query to $g$ at the end. The verifier does \emph{not}
+        need to evaluate the exponentially large sum directly.
+  \item \textbf{Prover computation:} The prover needs to compute $g_j$ in each round. Naively this
+        requires summing $g$ over $2^{\ell - j}$ boolean assignments, giving total prover work
+        $O(2^\ell)$ field operations (matching the naive approach of computing the sum directly).
+        In many applications $g$ has special structure allowing more efficient computation.
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\section{Applications of Sumcheck}
+%--------------------------------------------------------------------------
+
+The sumcheck protocol is a central building block of many modern proof systems. Although this
+section was listed as ``if time'' in the lecture and the corresponding slide was blank (i.e., not
+filled in during the lecture), we record some of the most important applications.
+
+\begin{itemize}
+  \item \textbf{$\#$P-completeness and counting problems.} Sumcheck was originally introduced by
+        Lund, Fortnow, Karloff, and Nisan (1990) in the context of interactive proofs for $\#$P.
+        It shows that $\mathsf{IP} = \mathsf{PSPACE}$.
+
+  \item \textbf{Proving matrix multiplication.} Sumcheck can verify that $A \cdot B = C$ for
+        $n \times n$ matrices in $O(n^2)$ verifier time (as opposed to $O(n^3)$ for direct
+        computation or $O(n^\omega)$ for fast multiplication).
+
+  \item \textbf{GKR protocol.} The sumcheck protocol is the core subroutine in the GKR (Goldwasser,
+        Kalai, Rothblum) protocol for verifiable computation on layered arithmetic circuits.
+
+  \item \textbf{Spartan / Hyperplonk / Lasso / Jolt.} These are modern zkSNARK backends that use
+        sumcheck as their central ingredient after reducing circuit satisfiability to a polynomial
+        identity that can be checked via sumcheck.
+
+  \item \textbf{Multilinear polynomial commitments.} The output of sumcheck (the random point
+        $(r_1, \ldots, r_\ell)$ and the oracle query $g(r_1, \ldots, r_\ell)$) couples naturally
+        with multilinear polynomial commitment schemes (e.g., based on inner product arguments),
+        giving efficient zkSNARKs.
+\end{itemize}
+
+%--------------------------------------------------------------------------
+\appendix
+\section*{Summary of Key Notation}
+%--------------------------------------------------------------------------
+
+\begin{center}
+\begin{tabular}{cl}
+  \hline
+  \textbf{Symbol} & \textbf{Meaning} \\
+  \hline
+  $\F$ & A finite field \\
+  $\ell$ & Number of variables in the polynomial $g$ \\
+  $d$ & Maximal individual degree of $g$ in any single variable \\
+  $g : \F^\ell \to \F$ & The multivariate polynomial whose sum we wish to verify \\
+  $H$ & The claimed value of $\sum_{i \in \bits^\ell} g(i)$ \\
+  $g_j(X_j)$ & Univariate polynomial sent by prover in round $j$ \\
+  $r_j$ & Random challenge field element sent by verifier in round $j$ \\
+  $\prover$, $\verifier$ & Prover and Verifier \\
+  $\prover^*$ & A malicious (cheating) prover \\
+  $R_L$ & The NP relation associated with language $L$ \\
+  $\mathsf{out}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]$ & Verifier's output in the interaction \\
+  $\mathsf{view}_{\verifier}[\prover(x) \leftrightarrow \verifier(x)]$ & Verifier's view (transcript) of the interaction \\
+  $\xleftarrow{\$}$ & Uniformly random sampling \\
+  \hline
+\end{tabular}
+\end{center}
+
+\end{document}

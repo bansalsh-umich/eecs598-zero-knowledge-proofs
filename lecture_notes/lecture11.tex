@@ -1,0 +1,666 @@
+%
+% EECS 498/CSE 598: Zero-Knowledge Proofs
+% Lecture 11: The Fiat-Shamir Transform
+% Instructor: Paul Grubbs
+% University of Michigan, Winter 2026
+%
+% Template based on standard CS theory lecture notes style.
+%
+
+\documentclass[11pt]{article}
+
+%----------------------- Packages -----------------------
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
+
+%----------------------- Page style -----------------------
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 11: The Fiat-Shamir Transform}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Lecture-specific macros
+
+%=============================================================
+\begin{document}
+%=============================================================
+
+%----------------------- Title block -----------------------
+\begin{center}
+  {\Large \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}} \\[4pt]
+  {\large \textbf{Lecture 11: The Fiat-Shamir Transform}} \\[4pt]
+  {\normalsize Instructor: Paul Grubbs \quad
+   \texttt{paulgrub@umich.edu} \quad Beyster 4709} \\[2pt]
+  {\normalsize University of Michigan \quad Winter 2026}
+\end{center}
+
+\medskip
+\hrule
+\medskip
+
+%----------------------- Agenda -----------------------
+\paragraph{Agenda.}
+\begin{enumerate}[label=(\arabic*)]
+  \item Announcements
+  \item The random oracle model
+  \item The Fiat-Shamir transform (and related transforms)
+  \item Security of Fiat-Shamir
+  \item Example: Fiat-Shamir for Schnorr
+\end{enumerate}
+
+\medskip
+\hrule
+\bigskip
+
+%=============================================================
+\section{Announcements}
+%=============================================================
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item The autograder is working.
+  \item Due date: 2/20.
+  \item \textit{[Handwritten note: ``\& Anora'']} \quad
+        (Additional context mentioned in class.)
+\end{itemize}
+
+%=============================================================
+\section{The Random Oracle Model}
+%=============================================================
+
+\subsection{Motivation and Definition}
+
+The \emph{random oracle model} (ROM) is a heuristic framework for
+designing and analyzing cryptographic protocols introduced by
+Bellare and Rogaway in 1993~\cite{BellareRogaway93}.
+
+\begin{tcolorbox}[colback=blue!5, colframe=blue!40!black,
+                  title={The Random Oracle Model (Bellare--Rogaway '93)}]
+\begin{itemize}
+  \item Every party has oracle access to a \emph{global random function}
+        $H : \{0,1\}^* \to \{0,1\}^\ell$.
+  \item All parties---prover $\prover$ \emph{and} verifier $\verifier$---query
+        the \emph{same} function $H$.  Consistency is guaranteed: if two
+        parties query $H$ on the same input they receive the same output.
+  \item The random oracle is \emph{lazily sampled}: the challenger
+        maintains a table and, whenever a fresh input $x$ is queried,
+        it samples a uniformly random output $H(x)$ and records it.
+        Subsequent queries on the same $x$ return the same value.
+\end{itemize}
+\end{tcolorbox}
+
+\subsection{The Random Oracle Methodology}
+
+Designing and deploying a scheme in the ROM proceeds in two (or
+three) steps:
+
+\begin{enumerate}
+  \item \textbf{Design.} Design the scheme (protocol) with oracle access
+        to the random oracle $H$.
+  \item \textbf{Prove.} Prove security of the scheme \emph{in the random
+        oracle model}: the security reduction may query the RO on behalf
+        of the adversary and use those queries to break an underlying
+        hard problem.
+  \item \textbf{Instantiate.} Instantiate the random oracle $H$ with a
+        \emph{cryptographic hash function} such as SHA-256 or SHA-3 and
+        deploy.
+\end{enumerate}
+
+\begin{remark}[Caveat on instantiation]
+  Step 3 is \emph{difficult to justify rigorously}.  Canetti, Goldreich,
+  and Halevi (CGH '98)~\cite{CGH98} showed \emph{uninstantiability}:
+  there exist schemes that are secure in the ROM but insecure under
+  \emph{every} concrete hash function.  Related notions:
+  \begin{itemize}
+    \item \textit{Uninstantiability} (CGH '98): some RO-secure schemes
+          cannot be securely instantiated with any real hash function.
+    \item \textit{Indifferentiability}: a framework for analyzing whether
+          a concrete hash construction (e.g.\ the sponge) behaves like a
+          random oracle in a composition sense.
+    \item \textit{Rothblum} (and related work): further results on when
+          the RO methodology is or is not sound.
+  \end{itemize}
+  Despite these caveats, the ROM methodology is ubiquitous in practice
+  because it produces efficient, clean protocols whose security proofs
+  give concrete guidance on parameter sizes.
+\end{remark}
+
+\subsection{Security in the ROM}
+
+When we say a scheme is secure ``in the ROM'' we mean:
+
+\begin{itemize}
+  \item The adversary receives oracle access to the same function $H$.
+  \item The security experiment (game) gives the adversary a
+        \emph{polynomial} number of $H$-queries.
+  \item The reduction can \emph{program} $H$ (choose outputs for
+        unqueried inputs) and can \emph{observe} all adversary queries to
+        $H$ -- this is the key extra power granted to the simulator in the
+        ROM.
+\end{itemize}
+
+%=============================================================
+\section{The Fiat-Shamir Transform}
+%=============================================================
+
+\subsection{High-Level Idea}
+
+Recall that a \emph{$\Sigma$-protocol} (sigma protocol) is a
+three-message public-coin interactive proof:
+\begin{enumerate}
+  \item Prover $\prover$ sends a \emph{commitment} $\alpha_1$ (first message).
+  \item Verifier $\verifier$ sends a uniformly random \emph{challenge}
+        $\rho$ (second message, the ``verifier randomness'').
+  \item Prover $\prover$ sends a \emph{response} $\alpha_2$ (third message).
+\end{enumerate}
+
+The key observation is that the verifier's only role in step 2 is to
+sample a uniformly random challenge.  In the ROM, the prover can
+\emph{simulate} this by querying the random oracle:
+
+\begin{tcolorbox}[colback=green!5, colframe=green!40!black,
+                  title={Fiat-Shamir: Replace the Verifier with a Random Oracle}]
+  The verifier is \textbf{public-coin}: its only message is a uniformly
+  random challenge.  Therefore, replace that message by a hash:
+  \[
+    \rho \;\leftarrow\; H(\mathbb{x},\, \alpha_1)
+  \]
+  where $\mathbb{x}$ is the public input (statement) and $\alpha_1$ is
+  the prover's first message (commitment).  The challenge is now
+  \emph{determined} by the public data already on the ``wire'', so no
+  further interaction is needed.
+\end{tcolorbox}
+
+\subsection{The Fiat-Shamir Protocol (Sigma Protocols)}
+
+We describe the transform for a generic $\Sigma$-protocol
+$(\mathsf{P}_{\mathrm{SP}}, \mathsf{V}_{\mathrm{SP}})$ with statement
+$\mathbb{x}$, witness $\mathbb{w}$, and random oracle $f = H$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners=4pt, minimum width=3.5cm,
+                minimum height=2.2cm, align=center, fill=gray!10},
+    diamond/.style={draw, fill=green!60!black, minimum size=0.7cm,
+                    inner sep=1pt, shape=diamond, text=white,
+                    font=\small\bfseries},
+    arr/.style={-{Stealth[length=6pt]}, thick},
+    font=\small
+  ]
+
+  % Prover box
+  \node[box, label=above:{$\prover(\mathbb{x},\mathbb{w})$}] (P) at (0,0) {
+    $\mathsf{P}_{\mathrm{SP}}(\mathbb{x},\mathbb{w})$
+  };
+
+  % RO diamond (inside prover region)
+  \node[diamond] (f1) at (4.0, 0.6) {$f$};
+
+  % Hash-input box
+  \node[draw, minimum width=1.6cm, minimum height=0.55cm,
+        right=0.3cm of f1, yshift=0cm, font=\footnotesize] (inp1)
+        {$\mathbb{x},\alpha_1,\tau$};
+
+  % Arrows from P to f1 (commitment alpha_1)
+  \draw[arr] (P.east) -- node[above]{$\alpha_1$} (f1.west|-P.east)
+             -- (f1.west);
+
+  % Arrow from f1 back to P (challenge rho)
+  \draw[arr] (f1.west) -- node[below]{$\rho$} (P.east|-f1.west)
+             -- (P.east);
+
+  % pi definition below P
+  \node[below=0.15cm of P, font=\footnotesize] (pidef)
+        {$\pi \coloneqq (\alpha_1,\alpha_2,\tau)$};
+
+  % Verifier box
+  \node[box, label=above:{$\verifier(\mathbb{x},\pi)$}] (V) at (9,0) {
+    \parbox{3cm}{\centering
+      \textbullet\ parse $\pi$ as $(\alpha_1,\alpha_2,\tau)$ \\[4pt]
+      \textbullet\ derive SP randomness \\[4pt]
+      \textbullet\ check SP decision
+    }
+  };
+
+  % RO diamond inside verifier
+  \node[diamond] (f2) at (7.3, -1.0) {$f$};
+  \node[draw, minimum width=1.6cm, minimum height=0.55cm,
+        left=0.3cm of f2, font=\footnotesize] (inp2)
+        {$\mathbb{x},\alpha_1,\tau$};
+  \draw[arr] (inp2.east) -- (f2.west);
+  \draw[arr] (f2.east) -- node[below, font=\footnotesize]{$\rho$}
+             ++(0.9,0);
+
+  % VSP decision box
+  \node[draw, rounded corners=2pt, fill=gray!20,
+        minimum width=3.4cm, minimum height=0.55cm,
+        below=0.6cm of V, font=\footnotesize] (vsp)
+        {$\mathsf{V}_{\mathrm{SP}}(\mathbb{x},\alpha_1,\rho,\alpha_2)$};
+
+  % pi arrow from prover to verifier
+  \draw[arr] (4.8,0) -- node[above]{$\pi$} (V.west|-{(4.8,0)});
+
+\end{tikzpicture}
+\caption{The Fiat-Shamir transform applied to a $\Sigma$-protocol.
+  The prover computes the challenge $\rho$ by hashing the public input
+  and commitment through the random oracle $f=H$, then packages the
+  transcript $\pi=(\alpha_1,\alpha_2,\tau)$ as a non-interactive proof.
+  The verifier re-derives $\rho$ from $\pi$ and checks the underlying
+  $\Sigma$-protocol verifier decision.  (Diagram courtesy Chiesa--Yogev.)}
+\end{figure}
+
+\subsubsection*{Formal description of the Fiat-Shamir transform}
+
+Let $(\mathsf{P}_{\mathrm{SP}}, \mathsf{V}_{\mathrm{SP}})$ be a
+$\Sigma$-protocol for a relation $\mathcal{R}$ with
+\begin{itemize}
+  \item first prover message (commitment) $\alpha_1$,
+  \item verifier challenge $\rho$ drawn uniformly from some challenge
+        space $\mathcal{C}$,
+  \item second prover message (response) $\alpha_2$.
+\end{itemize}
+Let $H : \{0,1\}^* \to \mathcal{C}$ be a random oracle.
+The \textbf{Fiat-Shamir non-interactive proof system}
+$(\mathsf{P}^{H}, \mathsf{V}^{H})$ is defined as follows.
+
+\begin{algorithm}[H]
+\caption{Fiat-Shamir Prover $\mathsf{P}^{H}(\mathbb{x},\mathbb{w})$}
+\begin{algorithmic}[1]
+  \State Run $\mathsf{P}_{\mathrm{SP}}(\mathbb{x},\mathbb{w})$ to
+         obtain the first message $\alpha_1$ and internal state $\tau$.
+  \State Query the random oracle:
+         $\rho \leftarrow H(\mathbb{x}, \alpha_1)$
+         \quad \textit{(query transcript up to verifier message)}
+  \State Continue running $\mathsf{P}_{\mathrm{SP}}$ with challenge $\rho$
+         to obtain response $\alpha_2$.
+  \State \Return proof $\pi \coloneqq (\alpha_1, \alpha_2, \tau)$.
+\end{algorithmic}
+\end{algorithm}
+
+\begin{remark}
+  In practice the ``state'' $\tau$ that is packaged into the proof
+  may simply be empty (the prover state needed to answer the challenge
+  is entirely determined by the witness and the randomness used to
+  produce $\alpha_1$).  Many presentations omit $\tau$ and write
+  $\pi = (\alpha_1, \alpha_2)$.
+\end{remark}
+
+\begin{algorithm}[H]
+\caption{Fiat-Shamir Verifier $\mathsf{V}^{H}(\mathbb{x},\pi)$}
+\begin{algorithmic}[1]
+  \State Parse $\pi$ as $(\alpha_1, \alpha_2, \tau)$.
+  \State Re-derive the SP randomness:
+         $\rho \leftarrow H(\mathbb{x}, \alpha_1)$.
+  \State Check the $\Sigma$-protocol decision:
+         \Return $\mathsf{V}_{\mathrm{SP}}(\mathbb{x}, \alpha_1, \rho, \alpha_2)$.
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Why Does This Work?}
+
+The Fiat-Shamir transform converts an \emph{interactive} public-coin
+protocol into a \emph{non-interactive} proof (in the ROM) with the
+following key properties:
+
+\begin{itemize}
+  \item \textbf{Completeness.}  An honest prover computes $\rho =
+        H(\mathbb{x},\alpha_1)$ and constructs a valid $\Sigma$-protocol
+        transcript; the verifier re-derives the same $\rho$ and accepts.
+  \item \textbf{Soundness.}  A cheating prover cannot predict $\rho =
+        H(\mathbb{x},\alpha_1)$ before querying $H$ (since $H$ is a
+        random oracle).  The security proof exploits the fact that the
+        reduction sees all prover queries to $H$ and can ``rewind'' or
+        ``program'' the oracle.
+  \item \textbf{Zero-knowledge.}  The simulation proceeds by programming
+        the RO: the simulator chooses $\rho$ first, generates a simulated
+        $(\alpha_1,\alpha_2)$ for that $\rho$, and then programs
+        $H(\mathbb{x},\alpha_1) \coloneqq \rho$.
+\end{itemize}
+
+%=============================================================
+\section{Other Related Transforms}
+%=============================================================
+
+The Fiat-Shamir transform is the most widely used technique for
+making interactive proofs non-interactive, but several related
+transforms have been developed for various settings.
+
+\begin{tcolorbox}[colback=yellow!5, colframe=orange!60!black,
+                  title={Variants and Extensions}]
+\begin{description}[leftmargin=2em]
+  \item[Fischlin / Pass transform.]
+        Achieves \emph{straight-line extraction}: the extractor does not
+        need to rewind the prover to extract a witness.  This is important
+        for concurrent security and for composability.
+
+  \item[Unruh transform / QROM.]
+        Fiat-Shamir is not automatically secure against \emph{quantum}
+        adversaries in the \emph{quantum random oracle model} (QROM).
+        The Unruh transform is a modification of Fiat-Shamir that
+        achieves provable security in the QROM.
+
+  \item[``Quantum'' ROM (QROM).]
+        In the QROM, the adversary can query the random oracle in
+        \emph{quantum superposition}: it queries a superposition of
+        inputs and receives a superposition of outputs.  Proving
+        security in the QROM requires new proof techniques
+        (one-way-to-hiding lemma, compressed oracle technique, etc.).
+
+  \item[``BCS'' transform.]
+        A generalization of Fiat-Shamir to \emph{multi-round}
+        (public-coin) interactive proofs, not just three-message
+        $\Sigma$-protocols.  Converts any public-coin interactive
+        proof into a non-interactive argument in the ROM.
+\end{description}
+\end{tcolorbox}
+
+%=============================================================
+\section{Security of the Fiat-Shamir Transform}
+%=============================================================
+
+\subsection{Overview}
+
+We now discuss security of the Fiat-Shamir transform in more detail.
+The standard result is:
+
+\begin{theorem}[Fiat-Shamir security, informal]
+  Let $(\mathsf{P}_{\mathrm{SP}}, \mathsf{V}_{\mathrm{SP}})$ be a
+  $\Sigma$-protocol that is \emph{complete}, \emph{special-sound}
+  (or knowledge-sound), and \emph{honest-verifier zero-knowledge
+  (HVZK)}.  Then the Fiat-Shamir transform
+  $(\mathsf{P}^{H}, \mathsf{V}^{H})$ is a \emph{non-interactive
+  zero-knowledge (NIZK) argument of knowledge} in the random oracle
+  model.
+\end{theorem}
+
+The proof of this theorem proceeds in three parts, corresponding to
+the three properties:
+
+\begin{enumerate}
+  \item \textbf{Completeness} is immediate from completeness of the
+        $\Sigma$-protocol.
+  \item \textbf{Knowledge soundness.} The extractor in the ROM has
+        oracle access to all $H$-queries made by the (cheating) prover.
+        The key technique is the \emph{forking lemma}: by running the
+        prover twice with different random oracle responses to the same
+        query $(\mathbb{x},\alpha_1)$, the extractor obtains two
+        accepting transcripts $(\alpha_1,\rho,\alpha_2)$ and
+        $(\alpha_1,\rho',\alpha_2')$ with $\rho \neq \rho'$, from
+        which the witness can be extracted (by special soundness of the
+        $\Sigma$-protocol).
+  \item \textbf{Zero-knowledge.} The simulator programs the RO to
+        make a simulated proof look identical to a real proof from the
+        verifier's perspective.
+\end{enumerate}
+
+\subsection{``Weak'' Fiat-Shamir Attacks}
+
+A crucial subtlety arises in practice.  There is a class of
+\emph{``weak'' Fiat-Shamir attacks} that exploit incorrect
+implementations of the transform.
+
+\begin{tcolorbox}[colback=red!5, colframe=red!60!black,
+                  title={``Weak'' Fiat-Shamir Attacks}]
+  The term \textbf{``weak'' Fiat-Shamir} refers to a variant of the
+  transform in which the hash (random oracle query) for the challenge
+  does \emph{not} include all public data that it should.
+
+  \medskip
+  \textbf{Correct} (``strong'') Fiat-Shamir:
+  \[
+    \rho \;\leftarrow\; H(\underbrace{\mathbb{x}}_{\text{statement}},\;
+                          \underbrace{\alpha_1}_{\text{commitment}})
+  \]
+
+  \medskip
+  \textbf{Incorrect} (``weak'') Fiat-Shamir (a common mistake):
+  \[
+    \rho \;\leftarrow\; H(\alpha_1) \quad \text{(statement $\mathbb{x}$ omitted!)}
+  \]
+
+  \medskip
+  When the statement $\mathbb{x}$ (or the commitment $\alpha_1$) is
+  omitted from the hash input, an adversary can \emph{attack} the
+  scheme:
+  \begin{itemize}
+    \item If $\mathbb{x}$ is omitted, a proof valid for one statement
+          may be repurposed for a different statement.
+    \item If $\alpha_1$ is omitted, the ``commitment'' step provides
+          no binding guarantee; the prover can choose $\alpha_1$
+          \emph{after} seeing $\rho$, breaking soundness.
+  \end{itemize}
+
+  Several real-world implementations of ZKP systems have been found to
+  be vulnerable to weak Fiat-Shamir attacks; this is an active area of
+  security engineering.
+\end{tcolorbox}
+
+\begin{remark}
+  The correct rule is: the random oracle input must include
+  \emph{all} public information that was available before the
+  challenge was sampled in the interactive protocol.  In a
+  $\Sigma$-protocol this means at minimum:
+  $(\mathbb{x},\, \alpha_1)$.
+  In a multi-round protocol it means the public input together with
+  \emph{every} prover message sent before that round's challenge.
+\end{remark}
+
+%=============================================================
+\section{Example: Fiat-Shamir for Schnorr}
+%=============================================================
+
+\subsection{Recap: The Schnorr $\Sigma$-Protocol}
+
+Let $\mathbb{G}$ be a cyclic group of prime order $p$ with generator
+$G$.  The \emph{Schnorr identification protocol} is a $\Sigma$-protocol
+for the discrete-logarithm relation
+\[
+  \mathcal{R}_{\mathrm{DL}} \;=\;
+  \bigl\{\,((\mathbb{G},G,p,X),\; x) \;\bigm|\;
+          X = xG\,\bigr\}.
+\]
+In the interactive version:
+\begin{enumerate}
+  \item \textbf{Prover} samples $r \xleftarrow{\$} \Z_p$, computes
+        $R \leftarrow rG$, and sends $R$ to the verifier.
+  \item \textbf{Verifier} samples $c \xleftarrow{\$} \Z_p$ and sends
+        $c$ to the prover.
+  \item \textbf{Prover} computes $z \leftarrow r + cx$ and sends $z$.
+  \item \textbf{Verifier} accepts iff $zG = R + cX$.
+\end{enumerate}
+
+\subsection{Applying Fiat-Shamir to Schnorr}
+
+Applying the Fiat-Shamir transform with random oracle
+$F : \{0,1\}^* \to \Z_p$ produces the \emph{Schnorr signature / NIZK}
+scheme.  The public input is $(\mathbb{G}, G, p, X)$.
+
+\begin{tcolorbox}[colback=blue!5, colframe=blue!40!black,
+                  title={Fiat-Shamir Schnorr: Non-Interactive Proof}]
+
+\begin{minipage}[t]{0.46\textwidth}
+\textbf{Prover} $P^F(\mathbb{G},G,p,X\,;\,x)$:
+\medskip\hrule\medskip
+\begin{algorithmic}[1]
+  \State $r \xleftarrow{\$} \Z_p$;\quad $R \leftarrow rG$
+  \State $c \leftarrow F(\mathbb{G},G,p,X,R)$
+  \State $z \leftarrow r + cx$
+  \State \Return $(R,\, c,\, z)$
+\end{algorithmic}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.46\textwidth}
+\textbf{Verifier} $V^F(\mathbb{G},G,p,X)$:
+\medskip\hrule\medskip
+\begin{algorithmic}[1]
+  \State \textbf{Input:} proof $(R,\, c,\, z)$
+  \State $c' \leftarrow F(\mathbb{G},G,p,X,R)$
+  \State \textbf{If} $c \neq c'$: \Return $\bot$
+  \State \Return $\bigl[\,zG = R + cX\,\bigr]$
+\end{algorithmic}
+\end{minipage}
+
+\end{tcolorbox}
+
+\subsection{Diagram: Making Schnorr Non-Interactive via Fiat-Shamir}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+    node distance=1.6cm,
+    arr/.style={-{Stealth[length=7pt]}, thick, blue!70!black},
+    font=\small
+  ]
+
+  % Prover column
+  \node (P_label) at (-2, 2.5) {\textbf{Prover} $P^F(\mathbb{G},G,p,X\,;\,x)$};
+  \node[draw, fill=blue!5, rounded corners=3pt,
+        minimum width=4cm, minimum height=3.8cm,
+        align=left] (P_box) at (-2, 0) {};
+
+  \node[align=left, font=\footnotesize] at (-2, 0.8)
+        {$r \xleftarrow{\$} \Z_p$;~$R \leftarrow rG$};
+  \node[align=left, font=\footnotesize] at (-2, 0.1)
+        {$c \leftarrow F(\mathbb{G},G,p,X,R)$};
+  \node[align=left, font=\footnotesize] at (-2, -0.6)
+        {$z \leftarrow r + cx$};
+
+  % Verifier column
+  \node (V_label) at (5.5, 2.5)
+        {\textbf{Verifier} $V^F(\mathbb{G},G,p,X)$};
+  \node[draw, fill=green!5, rounded corners=3pt,
+        minimum width=4.6cm, minimum height=3.8cm,
+        align=left] (V_box) at (5.5, 0) {};
+
+  \node[align=left, font=\footnotesize] at (5.5, 0.8)
+        {$c' \leftarrow F(\mathbb{G},G,p,X,R)$};
+  \node[align=left, font=\footnotesize] at (5.5, 0.1)
+        {if $c \neq c'$: ret $\bot$};
+  \node[draw, rounded corners=2pt, fill=yellow!20,
+        font=\footnotesize] at (5.5, -0.75) {$zG = R + cX$};
+
+  % Arrow carrying proof
+  \draw[arr] (-0.1, -0.55) -- node[above, font=\footnotesize]
+             {$R,\; c,\; z$} (3.1, -0.55);
+
+\end{tikzpicture}
+\caption{Fiat-Shamir applied to Schnorr.  The prover replaces the
+  interactive challenge with $c = F(\mathbb{G},G,p,X,R)$ and sends the
+  triple $(R,c,z)$ as the non-interactive proof.  The verifier
+  re-derives $c' = F(\mathbb{G},G,p,X,R)$, checks $c = c'$, and
+  verifies $zG = R + cX$.}
+\end{figure}
+
+\subsection{Correctness Check}
+
+Given an honestly generated proof $(R,c,z)$ with $z = r + cx$ and
+$c = F(\mathbb{G},G,p,X,R)$:
+\[
+  zG \;=\; (r + cx)G \;=\; rG + c(xG) \;=\; R + cX. \quad\checkmark
+\]
+The verifier's check $zG = R + cX$ therefore passes.
+
+\subsection{Security Intuition}
+
+\begin{itemize}
+  \item \textbf{Knowledge soundness.}  Suppose a cheating prover
+        produces an accepting proof $(R,c,z)$ with $c = F(\mathbb{G},G,p,X,R)$.
+        By the forking lemma, with non-negligible probability one can
+        rewind the prover (or reprogram the RO) to obtain a second
+        accepting proof $(R,c',z')$ with $c' \neq c$.  From the two
+        equations
+        \[
+          zG = R + cX, \qquad z'G = R + c'X,
+        \]
+        we get $(z-z')G = (c-c')X$, so
+        $x = (z-z')(c-c')^{-1} \pmod{p}$.
+        This extracts the witness $x$, reducing knowledge soundness to
+        the discrete logarithm problem.
+
+  \item \textbf{Zero-knowledge.}  The simulator $\mathsf{Sim}$ (without
+        witness) proceeds as follows: pick $c \xleftarrow{\$} \Z_p$ and
+        $z \xleftarrow{\$} \Z_p$, set $R \leftarrow zG - cX$, and
+        program $F(\mathbb{G},G,p,X,R) \coloneqq c$.  The simulated
+        proof $(R,c,z)$ is statistically identical to a real proof.
+
+  \item \textbf{When used as a digital signature.}  Including the
+        message $m$ in the hash---$c \leftarrow
+        F(\mathbb{G},G,p,X,R,m)$---yields the \emph{Schnorr signature
+        scheme}, which is existentially unforgeable under chosen-message
+        attack (EUF-CMA) in the ROM under the DL assumption.
+\end{itemize}
+
+%=============================================================
+% References
+%=============================================================
+\bigskip
+\hrule
+\bigskip
+
+\begin{thebibliography}{9}
+
+\bibitem{BellareRogaway93}
+  M.~Bellare and P.~Rogaway,
+  ``Random oracles are practical: A paradigm for designing efficient
+  protocols,''
+  \emph{ACM CCS}, 1993.
+
+\bibitem{CGH98}
+  R.~Canetti, O.~Goldreich, and S.~Halevi,
+  ``The random oracle methodology, revisited,''
+  \emph{STOC}, 1998.
+
+\bibitem{FiatShamir87}
+  A.~Fiat and A.~Shamir,
+  ``How to prove yourself: practical solutions to identification and
+  signature problems,''
+  \emph{CRYPTO}, 1987.
+
+\bibitem{PointchevalStern96}
+  D.~Pointcheval and J.~Stern,
+  ``Security proofs for signature schemes,''
+  \emph{EUROCRYPT}, 1996.
+  (Introduces the Forking Lemma.)
+
+\bibitem{Unruh15}
+  D.~Unruh,
+  ``Non-interactive zero-knowledge proofs in the quantum random oracle
+  model,''
+  \emph{EUROCRYPT}, 2015.
+
+\bibitem{FischlinPass}
+  M.~Fischlin and R.~Pass,
+  ``On the impossibility of three-move blind signature schemes,''
+  \emph{EUROCRYPT}, 2010.
+  (Related work on straight-line extraction.)
+
+\bibitem{BCS16}
+  E.~Ben-Sasson, A.~Chiesa, and N.~Spooner,
+  ``Interactive oracle proofs,''
+  \emph{TCC}, 2016.
+  (Basis for the ``BCS'' multi-round transform.)
+
+\end{thebibliography}
+
+\end{document}

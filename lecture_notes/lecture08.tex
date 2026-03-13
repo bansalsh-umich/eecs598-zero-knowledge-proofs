@@ -1,0 +1,788 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in, headheight=14pt]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{microtype}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+
+\input{notation.tex}
+\input{zk-notation.tex}
+\input{environments.tex}
+\input{lecture-macros.tex}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{EECS 498/CSE 598: Zero-Knowledge Proofs}
+\rhead{Winter 2026}
+\lfoot{Lecture 8: IOPs, PIOPs, and the Delphian PIOP}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% Lecture-specific macros
+\newcommand{\MLE}{\widetilde}
+\newcommand{\eq}{\widetilde{\mathrm{eq}}}
+
+\tcbuselibrary{theorems, skins, breakable}
+
+\newtcolorbox{defbox}[1][]{colback=blue!5!white, colframe=blue!60!black,
+  fonttitle=\bfseries, title={#1}}
+
+\newtcolorbox{thmbox}[1][]{colback=green!5!white, colframe=green!60!black,
+  fonttitle=\bfseries, title={#1}}
+
+\newtcolorbox{notebox}[1][Note]{colback=orange!5!white, colframe=orange!60!black,
+  fonttitle=\bfseries, title={#1}}
+
+\newtcolorbox{quizbox}[1][Pop Quiz]{colback=yellow!10!white, colframe=yellow!60!black,
+  fonttitle=\bfseries, title={#1}}
+
+\begin{document}
+
+%-----------------------------------------------------------------------
+% Title Block
+%-----------------------------------------------------------------------
+\begin{center}
+  {\LARGE \textbf{EECS 498 / CSE 598: Zero-Knowledge Proofs}}\\[6pt]
+  {\large Winter 2026}\\[4pt]
+  {\large \textbf{Lecture 8: Interactive Oracle Proofs, Polynomial IOPs,}}\\
+  {\large \textbf{and the Delphian PIOP for R1CS-Sat}}\\[6pt]
+  Instructor: Paul Grubbs \quad
+  \href{mailto:paulgrub@umich.edu}{\texttt{paulgrub@umich.edu}} \quad
+  Beyster 4709
+\end{center}
+
+\hrule
+\vspace{10pt}
+
+%-----------------------------------------------------------------------
+% Agenda
+%-----------------------------------------------------------------------
+\section*{Agenda}
+\begin{enumerate}[leftmargin=2em]
+  \item Announcements
+  \item Interactive oracle proofs and polynomial IOPs
+  \item IOP/PIOP security notions
+  \item The Delphian PIOP for R1CS-Sat
+  \item Soundness of Delphian as a PIOP
+\end{enumerate}
+
+\newpage
+
+%-----------------------------------------------------------------------
+\section{Announcements}
+%-----------------------------------------------------------------------
+
+\begin{itemize}
+  \item Project 2 is online.
+  \item Autograder is working.
+  \item Due date: 2/20.
+\end{itemize}
+
+%-----------------------------------------------------------------------
+\section{Interactive Oracle Proofs and Polynomial IOPs}
+%-----------------------------------------------------------------------
+
+\subsection{Historical Context}
+
+Interactive proof systems have a rich history in theoretical computer science:
+
+\begin{itemize}
+  \item \textbf{Mid-1980s: Interactive Proofs (IPs).}
+    Babai and Goldwasser--Micali--Rackoff (GMR) introduced interactive proofs
+    and zero-knowledge proofs. Key results from this era include:
+    \begin{itemize}
+      \item The Sumcheck protocol.
+      \item $\mathsf{IP} = \mathsf{PSPACE}$.
+      \item $\mathsf{MIP} = \mathsf{NEXP}$ (multi-prover interactive proofs).
+    \end{itemize}
+
+  \item \textbf{Mid-1990s: Probabilistically Checkable Proofs (PCPs).}
+    PCPs are proofs that can be checked using randomness; the verifier gets
+    \emph{oracle access} to the proof string and only reads a small number of
+    positions. The landmark result is the PCP Theorem:
+    \[
+      \mathsf{NP} = \mathsf{PCP}[O(1),\, O(\log n)]
+    \]
+    meaning every NP language has a PCP verifier that uses $O(1)$ random bits
+    and reads only $O(\log n)$ bits of the proof.
+
+  \item \textbf{2000s: ZKPs from linear PCPs.}
+    Zero-knowledge proofs were constructed from \emph{linear} PCPs.
+
+  \item \textbf{2010s: IOPs, PIOPs, and iPCP.}
+    The modern framework of \emph{Interactive Oracle Proofs} (IOPs) and
+    \emph{Polynomial IOPs} (PIOPs) was developed, unifying and generalizing
+    prior approaches. These are the tools used to build today's practical SNARKs.
+\end{itemize}
+
+\subsection{Interactive Oracle Proofs (IOPs)}
+
+\begin{defbox}[Interactive Oracle Proof (IOP)]
+An \textbf{Interactive Oracle Proof (IOP)} is an interactive proof with special
+``oracle'' messages. It is an IP in which:
+\begin{itemize}
+  \item The prover $P$ sends oracle messages $\Pi_1, \Pi_2, \ldots, \Pi_k$
+    (which can be thought of as long strings or functions).
+  \item The verifier $V$ may \emph{query} each oracle message at chosen
+    positions, rather than reading it in full.
+  \item $P$ must answer oracle queries truthfully (i.e., consistently with the
+    oracle message it committed to sending).
+\end{itemize}
+\end{defbox}
+
+The IOP interaction proceeds as follows: the prover and verifier share a common
+input $\mathsf{x}$ (the statement); the prover additionally holds a witness
+$\mathsf{w}$. In each round $i$:
+\begin{enumerate}
+  \item $P_{\IOP}(\mathsf{x}, \mathsf{w})$ sends an oracle message $\Pi_i$
+    to $V_{\IOP}(\mathsf{x})$.
+  \item $V_{\IOP}(\mathsf{x})$ sends a random challenge $\rho_i$ back to the
+    prover.
+\end{enumerate}
+After $k$ rounds, the verifier makes a polynomial number of queries to the
+oracle messages $\Pi_1, \ldots, \Pi_k$ and outputs accept or reject.
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=5cm,
+    box/.style={draw, rounded corners, minimum width=2.2cm, minimum height=6cm, align=center, font=\small},
+    arr/.style={-{Stealth}, thick},
+    oracle/.style={draw, fill=white, minimum width=3cm, minimum height=0.45cm, font=\scriptsize},
+    chal/.style={font=\small},
+  ]
+
+  % Prover box
+  \node[box] (P) {$\mathbf{P}_{\IOP}(\mathsf{x},\mathsf{w})$};
+  % Verifier box
+  \node[box, right=of P] (V) {$\mathbf{V}_{\IOP}(\mathsf{x})$};
+
+  % Round 1
+  \node[oracle, above right=0.5cm and 0cm of P.north east, xshift=-0.5cm, yshift=-0.5cm]
+    (o1) {$\Pi_1$\hspace{1.5cm}};
+  \draw[arr] ([yshift=1.8cm]P.east) -- node[oracle,above,pos=0.5]{$\Pi_1$} ([yshift=1.8cm]V.west);
+  \node[above, font=\scriptsize] at ([yshift=1.5cm,xshift=0cm]$(P.east)!0.5!(V.west)$)
+    {(V queries $\Pi_1$ at chosen points)};
+  \draw[arr] ([yshift=1.0cm]V.west) -- node[above, font=\small]{$\rho_1$} ([yshift=1.0cm]P.east);
+
+  % Round 2
+  \draw[arr] ([yshift=-0.2cm]P.east) -- node[oracle,above,pos=0.5]{$\Pi_2$} ([yshift=-0.2cm]V.west);
+  \node[above, font=\scriptsize] at ([yshift=-0.5cm,xshift=0cm]$(P.east)!0.5!(V.west)$)
+    {(V queries $\Pi_2$ at chosen points)};
+  \draw[arr] ([yshift=-1.0cm]V.west) -- node[above, font=\small]{$\rho_2$} ([yshift=-1.0cm]P.east);
+
+  % Dots
+  \node at ($(P.east)!0.5!(V.west)+(0,-1.5)$) {$\vdots$};
+
+  % Round k
+  \draw[arr] ([yshift=-2.1cm]P.east) -- node[oracle,above,pos=0.5]{$\Pi_k$} ([yshift=-2.1cm]V.west);
+  \draw[arr] ([yshift=-2.8cm]V.west) -- node[above, font=\small]{$\rho_k$} ([yshift=-2.8cm]P.east);
+
+\end{tikzpicture}
+\end{center}
+
+\begin{remark}
+  The key distinction from a standard IP is that the verifier does \emph{not}
+  read the oracle messages in their entirety---it only \emph{queries} them at a
+  small number of positions. This allows the prover's messages to be
+  exponentially long, yet the verifier remains efficient. In implementations,
+  oracle messages are typically committed to using a polynomial commitment scheme
+  or a Merkle tree, giving the prover no ability to ``change'' a message after
+  sending it.
+\end{remark}
+
+\subsection{Polynomial IOPs (PIOPs)}
+
+A \textbf{Polynomial IOP (PIOP)} is an IOP in which each oracle message $\Pi_i$
+sent by the prover is a \emph{polynomial} of bounded degree, and the verifier's
+oracle queries are \emph{evaluation queries}: the verifier picks a point $r$ and
+receives the value $P_i(r)$.
+
+\begin{defbox}[Polynomial IOP (PIOP)]
+A \textbf{Polynomial IOP (PIOP)} is an IOP where:
+\begin{itemize}
+  \item Each prover oracle message $\Pi_i$ is a polynomial $P_i$ with
+    $\deg(P_i) < d_i$ (for some declared degree bound $d_i$).
+  \item Each verifier oracle query is an evaluation: the verifier picks a point
+    and receives the claimed value of the polynomial there.
+  \item The degree constraint is enforced: the verifier can check that claimed
+    evaluations are consistent with a degree-$d_i$ polynomial (via a polynomial
+    commitment scheme in the compiled version).
+\end{itemize}
+\end{defbox}
+
+The PIOP interaction diagram is as follows:
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=5.5cm,
+    box/.style={draw, rounded corners, minimum width=2.2cm, minimum height=6cm, align=center, font=\small},
+    arr/.style={-{Stealth}, thick},
+    oracle/.style={draw, fill=white, minimum width=3.5cm, minimum height=0.45cm,
+      font=\scriptsize, align=center},
+    chal/.style={font=\small},
+  ]
+
+  \node[box] (P) {$\mathbf{P}_{\PIOP}(\mathsf{x},\mathsf{w})$};
+  \node[box, right=of P] (V) {$\mathbf{V}_{\PIOP}(\mathsf{x})$};
+
+  % Round 1 oracle
+  \draw[arr] ([yshift=1.8cm]P.east) --
+    node[oracle, above, pos=0.5, align=center]
+    {polynomial $P_1$,\; $\deg(P_1) < d_1$}
+    ([yshift=1.8cm]V.west);
+  \node[draw, font=\scriptsize, above right=0.05cm and 0.1cm of V.north west,
+    yshift=0.9cm] {Eval $P_1$ at $r$};
+  \node[draw, font=\scriptsize, right=0.1cm of V.west, yshift=1.05cm]
+    {$P_1(r) = v$};
+  \draw[arr] ([yshift=1.0cm]V.west) -- node[above, font=\small]{$\rho_1$}
+    ([yshift=1.0cm]P.east);
+
+  % Round 2 oracle
+  \draw[arr] ([yshift=-0.2cm]P.east) --
+    node[oracle, above, pos=0.5, align=center]
+    {polynomial $P_2$,\; $\deg(P_2) < d_2$}
+    ([yshift=-0.2cm]V.west);
+  \node[draw, font=\scriptsize, right=0.1cm of V.west, yshift=-0.45cm]
+    {Eval $P_2$ at $s$};
+  \node[draw, font=\scriptsize, right=0.1cm of V.west, yshift=-1.0cm]
+    {$P_2(s) = x$};
+  \draw[arr] ([yshift=-1.0cm]V.west) -- node[above, font=\small]{$\rho_2$}
+    ([yshift=-1.0cm]P.east);
+
+  \node at ($(P.east)!0.5!(V.west)+(0,-1.6)$) {$\vdots$};
+
+  % Round k oracle
+  \draw[arr] ([yshift=-2.1cm]P.east) --
+    node[oracle, above, pos=0.5, align=center]
+    {polynomial $P_k$,\; $\deg(P_k) < d_k$}
+    ([yshift=-2.1cm]V.west);
+  \node[draw, font=\scriptsize, right=0.1cm of V.west, yshift=-2.5cm]
+    {Eval $P_k$ at $t$};
+  \node[draw, font=\scriptsize, right=0.1cm of V.west, yshift=-3.0cm]
+    {$P_k(t) = z$};
+  \draw[arr] ([yshift=-2.8cm]V.west) -- node[above, font=\small]{$\rho_k$}
+    ([yshift=-2.8cm]P.east);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Sumcheck as a PIOP}
+
+The classical Sumcheck protocol is naturally expressed as a PIOP. Recall that
+in the Sumcheck protocol for a $v$-variate polynomial $g$ over $\F$, the prover
+wants to convince the verifier that
+\[
+  H = \sum_{x_1,\ldots,x_v \in \bits} g(x_1, \ldots, x_v).
+\]
+
+In the PIOP formulation, the prover and verifier are written as
+$\prover(g, H)$ and $\verifier^{\mathcal{O}_g}(H)$ respectively, where
+$\mathcal{O}_g$ denotes oracle access to $g$. The interaction proceeds as
+follows:
+
+\bigskip
+\noindent\textbf{Round 1:}
+\begin{itemize}
+  \item Prover computes $g_1(X_1)$ as:
+    \[
+      g_1(X_1) = \sum_{x_2, \ldots, x_v \in \bits} g(X_1, x_2, \ldots, x_v)
+    \]
+    and sends oracle $\mathcal{O}_{g_1}$ to the verifier.
+  \item Verifier checks $H = \mathcal{O}_{g_1}(0) + \mathcal{O}_{g_1}(1)$ by
+    querying $\mathcal{O}_{g_1}$ at 0 and 1.
+  \item Verifier samples $r_1 \leftarrow \$ \; \F$ and sends it to the prover.
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Round $j$ (for $j = 2, \ldots, v-1$):}
+\begin{itemize}
+  \item Prover computes $g_j(X_j)$ as:
+    \[
+      g_j(X_j) = \sum_{x_{j+1}, \ldots, x_v \in \bits}
+        g(r_1, \ldots, r_{j-1}, X_j, x_{j+1}, \ldots, x_v)
+    \]
+    and sends oracle $\mathcal{O}_{g_j}$ to the verifier.
+  \item Verifier queries $\mathcal{O}_{g_{j-1}}$ and $\mathcal{O}_{g_j}$ to
+    check:
+    \[
+      \mathcal{O}_{g_{j-1}}(r_{j-1}) = \mathcal{O}_{g_j}(0) + \mathcal{O}_{g_j}(1)
+    \]
+  \item Verifier samples $r_j \leftarrow \$ \; \F$ and sends it to the prover.
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Final round ($j = v$):}
+\begin{itemize}
+  \item Prover computes $g_v(X_v) = g(r_1, \ldots, r_{v-1}, X_v)$ and sends
+    oracle $\mathcal{O}_{g_v}$.
+  \item Verifier queries $\mathcal{O}_{g_{v-1}}$ and $\mathcal{O}_{g_v}$ to
+    check:
+    \[
+      \mathcal{O}_{g_{v-1}}(r_{v-1}) = \mathcal{O}_{g_v}(0) + \mathcal{O}_{g_v}(1)
+    \]
+  \item Verifier samples $r_v \leftarrow \$ \; \F$.
+  \item Verifier queries/checks $\mathcal{O}_{g_v}(r_v) = \mathcal{O}_g(r_1,
+    \ldots, r_v)$ (using the oracle for $g$ itself).
+  \item If all checks pass: Return true. Else return false.
+\end{itemize}
+
+\begin{quizbox}[Pop Quiz]
+  What is the degree bound for the $g_i$ oracles sent during the Sumcheck proof?
+
+  \medskip
+  \textit{Answer:} Each $g_j(X_j)$ is a univariate polynomial obtained by
+  summing $g$ over binary values of all variables except $X_j$. If $g$ has
+  individual degree at most $d$ in each variable, then each $g_j$ has degree at
+  most $d$ in $X_j$. For multilinear $g$ (individual degree at most 1), each
+  $g_j$ is a \emph{linear} (degree-1) polynomial.
+\end{quizbox}
+
+%-----------------------------------------------------------------------
+\section{IOP/PIOP Security Notions}
+%-----------------------------------------------------------------------
+
+\begin{defbox}[Completeness of a PIOP]
+A PIOP for relation $\mathcal{R}$ has \textbf{perfect completeness} if, for all
+$(x, w) \in \mathcal{R}$:
+\[
+  \Pr\!\left[\out_V\!\left[P(x,w) \leftrightarrow V(x)\right] = 1\right] = 1.
+\]
+That is, an honest prover with a valid witness always convinces the honest
+verifier.
+\end{defbox}
+
+\begin{defbox}[$\varepsilon$-Soundness of a PIOP]
+A PIOP has \textbf{$\varepsilon$-soundness} if, for all $x \notin L$ and for
+all (possibly malicious) PIOP provers $P^*$:
+\[
+  \Pr\!\left[\out_V\!\left[P^*(x) \leftrightarrow V(x)\right] = 1\right] \leq \varepsilon.
+\]
+That is, no cheating prover can convince the verifier to accept a false
+statement, except with probability at most $\varepsilon$.
+\end{defbox}
+
+There are several important variants of soundness for IOPs and PIOPs,
+each capturing a different level of security:
+
+\begin{itemize}
+  \item \textbf{Round-by-round soundness:} A fine-grained notion tracking the
+    soundness error accumulated at each round of interaction. In each round, the
+    prover can only ``survive'' with bounded probability if the current partial
+    transcript does not already correspond to a valid prefix. This notion is
+    useful for analyzing Fiat--Shamir compiled proofs.
+
+  \item \textbf{Non-adaptive soundness:} The prover must commit to its oracle
+    messages independently of the verifier's future challenges (which in a
+    PIOP is automatically true because the prover sends polynomials). This is
+    the standard notion.
+
+  \item \textbf{Knowledge soundness:} There exists an efficient \emph{extractor}
+    that, given oracle access to any cheating prover that succeeds with
+    non-negligible probability, can extract a valid witness. Knowledge soundness
+    implies soundness.
+
+  \item \textbf{State-restoration soundness:} A strengthening of soundness where
+    the adversarial prover can ``rewind'' the verifier to any past state and
+    branch the interaction. This is relevant for proving security of
+    Fiat--Shamir compiled protocols in the random oracle model.
+
+  \item \textbf{Witness-extended emulation:} A strong knowledge extraction
+    property where the extractor can run alongside the prover and extract a
+    witness via rewinding.
+
+  \item \textbf{Simulation soundness:} Even given access to a simulated proof
+    (e.g., a zero-knowledge simulator), the prover cannot produce a valid proof
+    for a false statement. Relevant when constructing non-malleable or
+    UC-secure protocols.
+\end{itemize}
+
+%-----------------------------------------------------------------------
+\section{The Delphian PIOP for R1CS-Sat}
+%-----------------------------------------------------------------------
+
+\subsection{Background: R1CS-Sat}
+
+Recall the R1CS-Sat relation. Let $\ell = \log n$ (so $n = 2^\ell$). We work
+over a finite field $\F$, with matrices $A, B, C \in \F^{n \times n}$.
+
+\begin{defbox}[R1CS-Sat Relation]
+Given matrices $A, B, C \in \F^{n \times n}$, the \textbf{R1CS-Sat} relation
+$\mathcal{R}_{A,B,C}$ consists of pairs $(x, w)$ such that:
+\[
+  z = (x \,\|\, w), \qquad Az \circ Bz = Cz,
+\]
+where $\circ$ denotes componentwise (Hadamard) product. Equivalently,
+$x \in \mathcal{L}_{A,B,C}$ if there exists a witness $w$ such that
+$Az \circ Bz = Cz$.
+\end{defbox}
+
+The Delphian PIOP proves R1CS-Sat and can prove all of NP (since R1CS-Sat is
+NP-complete). The parties are:
+\[
+  P_{\mathsf{Delphian}}(A, B, C, x, w) \qquad \text{and} \qquad V(A, B, C, x).
+\]
+
+\subsection{The Residual Polynomial}
+
+The key algebraic object is the \textbf{residual polynomial}. Let
+$z = (x \| w) \in \F^n$ be the full assignment vector. Define
+\[
+  f_{\mathrm{res}}(x) \;=\;
+  \Bigl(\sum_j A(x,j)\, z(j)\Bigr)
+  \Bigl(\sum_j B(x,j)\, z(j)\Bigr)
+  -\;
+  \Bigl(\sum_j C(x,j)\, z(j)\Bigr),
+\]
+where we view $x$ as a binary index in $\bits^{\log n}$, and $A(x,j),
+B(x,j), C(x,j)$ are the entries of the matrices accessed via their
+multilinear extensions.
+
+This function $f_{\mathrm{res}}$ maps $\bits^{\log n} \to \F$, and:
+\[
+  f_{\mathrm{res}} \text{ is zero on } \bits^{\log n}
+  \quad\iff\quad
+  z \text{ satisfies } Az \circ Bz = Cz.
+\]
+
+\subsection{Moving to Multilinear Extensions}
+
+To use sumcheck, we work with the multilinear extension of $f_{\mathrm{res}}$.
+Denote by $\tilde{M}$ the multilinear extension (MLE) of any function $M$ on
+the Boolean hypercube.
+
+The prover will send the MLE $\tilde{w}$ of the witness $w$ as a polynomial
+oracle. Define the ``extended'' residual polynomial as:
+\[
+  g_{\mathrm{res}}(x) \;=\;
+  \Bigl(\sum_j \tilde{A}(x,j)\,\tilde{z}(j)\Bigr)
+  \Bigl(\sum_j \tilde{B}(x,j)\,\tilde{z}(j)\Bigr)
+  -\;
+  \Bigl(\sum_j \tilde{C}(x,j)\,\tilde{z}(j)\Bigr),
+\]
+where $g_{\mathrm{res}}: \F^{\log n} \to \F$ is a polynomial over the full
+field extension. Crucially:
+\[
+  g_{\mathrm{res}}(x) = f_{\mathrm{res}}(x) \quad \text{for all } x \in \bits^{\log n}.
+\]
+
+So checking that $z$ satisfies R1CS is equivalent to checking that
+$g_{\mathrm{res}}$ is identically zero on the hypercube $\bits^{\log n}$.
+
+\subsection{Reduction via the Equality Polynomial}
+
+To check that $g_{\mathrm{res}}$ is zero on the entire hypercube, we use the
+\textbf{multilinear extension of the equality function}. Define:
+\[
+  \widetilde{\mathrm{eq}}(\tau, x) \;=\; \prod_{i=1}^{\log n}
+    \bigl(\tau_i x_i + (1 - \tau_i)(1 - x_i)\bigr),
+\]
+which equals 1 if $\tau = x$ and 0 otherwise, for $\tau, x \in \bits^{\log n}$.
+
+\begin{theorem}[Key Reduction]
+  Let $\tau \leftarrow \$\; \F^{\log n}$ be a random vector. If
+  $g_{\mathrm{res}}(x) \neq 0$ for some $x \in \bits^{\log n}$, then:
+  \[
+    \Pr_{\tau \leftarrow \F^{\log n}}\!\left[
+      \sum_{x \in \bits^{\log n}} \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x) = 0
+    \right] \;\leq\; \frac{n}{|\F|}.
+  \]
+  In other words, with high probability over $\tau$, the sum
+  $\sum_x \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x) \neq 0$ when
+  $z$ does not satisfy R1CS.
+\end{theorem}
+
+\begin{remark}
+  The function $h(x) = \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x)$
+  can be verified to be nonzero (over $\F^{\log n}$) via a sumcheck on its sum
+  over the hypercube. The verifier chooses $\tau$ after the prover commits to
+  $\tilde{w}$, making it impossible for a cheating prover to ``target'' a specific
+  $\tau$.
+\end{remark}
+
+\subsection{First Phase of the Delphian PIOP}
+
+The first phase reduces the R1CS-Sat check to polynomial evaluation claims via
+sumcheck.
+
+\begin{algorithm}[H]
+\caption{Delphian PIOP -- First Phase}
+\begin{algorithmic}[1]
+\Statex \hspace{-\algorithmicindent}
+  $\prover(A, B, C, x, w)$
+  \hfill
+  $\verifier(A, B, C, x)$
+\Statex \hrulefill
+
+\State \textbf{Prover:} Compute multilinear extension $\tilde{w}$ of $w$.
+\State \textbf{Prover} $\to$ \textbf{Verifier:} Send oracle $\mathcal{O}_{\tilde{w}}$.
+
+\Statex
+\State \textbf{Verifier:} Sample $\tau \getsr \F^{\log n}$; send $\tau$ to prover.
+
+\Statex
+\State \textbf{Both:} Define $h(x) = \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x)$.
+  \Statex \quad\quad Verifier annotates: $h(r'_1, \ldots, r'_{\log n}) = \widetilde{\mathrm{eq}}(\tau, r')\, g_{\mathrm{res}}(r')$
+
+\State \textbf{Prover:} Compute $h(x) = \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x)$; send oracle $\mathcal{O}_h$.
+
+\Statex
+\State \textbf{Both:} Run sumcheck subprotocol on $h$ with claimed sum 0:
+  \[
+    \SCPIOP\!\left[\prover_{sc}(h, 0) \leftrightarrow \verifier_{sc}^{\mathcal{O}_h}(0)\right]
+  \]
+\State \textbf{Verifier} $\to$ \textbf{Prover:} Sumcheck outputs $(r' = (r'_1, \ldots, r'_{\log n}),\, H')$.
+
+\Statex
+\State \textbf{Verifier:} Compute $e \leftarrow \widetilde{\mathrm{eq}}(\tau, r')$;\;
+  $G' \leftarrow H'/e$.
+  \Statex \quad\quad [Note: $G'$ is claimed to be $g_{\mathrm{res}}(r')$, which equals:]
+  \[
+    g_{\mathrm{res}}(r') = \Bigl(\sum_j \tilde{A}(r',j)\,\tilde{z}(j)\Bigr)
+      \Bigl(\sum_j \tilde{B}(r',j)\,\tilde{z}(j)\Bigr)
+      - \Bigl(\sum_j \tilde{C}(r',j)\,\tilde{z}(j)\Bigr)
+  \]
+
+\Statex
+\For{$M \in \{A, B, C\}$}
+  \State \textbf{Prover:} Define $p_M(x) = \tilde{f}_M(r', x)\, \tilde{z}(x)$,
+    where $\tilde{f}_M(r', x) = \tilde{M}(r', x)$.
+  \State \textbf{Prover:} Compute $v_M = \sum_{x \in \bits^{\log n}} p_M(x)$.
+\EndFor
+
+\State \textbf{Prover} $\to$ \textbf{Verifier:} Send $v_A, v_B, v_C, \mathcal{O}_{p_A}, \mathcal{O}_{p_B}, \mathcal{O}_{p_C}$.
+
+\State \textbf{Verifier:} Check $v_A * v_B - v_C = G'$.
+  \Statex \quad\quad (Continue to Phase 2 for each $M$.)
+
+\end{algorithmic}
+\end{algorithm}
+
+\begin{remark}
+  After the first sumcheck, the verifier has a polynomial evaluation claim at a
+  random point $r' \in \F^{\log n}$:
+  \[
+    h(r'_1, \ldots, r'_{\log n}) = \widetilde{\mathrm{eq}}(\tau, r')\, g_{\mathrm{res}}(r').
+  \]
+  This is checked by computing $e = \widetilde{\mathrm{eq}}(\tau, r')$ locally
+  (the verifier knows $\tau$ and $r'$) and checking that $G' = H'/e$ equals
+  $v_A \cdot v_B - v_C$.
+\end{remark}
+
+\subsection{Second Phase of the Delphian PIOP}
+
+The second phase verifies the claimed sums $v_M$ for each matrix $M \in \{A, B, C\}$
+using another sumcheck. The key identity used is:
+\[
+  p_M(r''_M) = \tilde{M}(r', r''_M) \cdot \tilde{z}(r''_M).
+\]
+
+Recall: $p_M(x) = \tilde{f}_M(r', x)\, \tilde{z}(x)$, so the claimed sum is
+$v_M = \sum_{x \in \bits^{\log n}} p_M(x)$.
+
+\begin{algorithm}[H]
+\caption{Delphian PIOP -- Second Phase (for each $M \in \{A, B, C\}$)}
+\begin{algorithmic}[1]
+\Statex \hspace{-\algorithmicindent}
+  $\prover(A, B, C, x, w)$
+  \hfill
+  $\verifier(A, B, C, x)$
+\Statex \hrulefill
+
+\For{$M \in \{A, B, C\}$}
+  \State \textbf{Both:} Run sumcheck on $p_M$ with claimed sum $v_M$:
+    \[
+      \SCPIOP\!\left[\prover_{sc}(p_M, v_M) \leftrightarrow
+        \verifier_{sc}^{\mathcal{O}_{p_M}}(v_M)\right]
+    \]
+  \State \textbf{Verifier} $\to$ \textbf{Prover:}
+    Sumcheck outputs $r''_M = (r''_{M,1}, \ldots, r''_{M,\log n}),\, H''$.
+  \Statex
+  \State \textbf{Prover} $\to$ \textbf{Verifier:}
+    Query $\mathcal{O}_{\tilde{w}}(r''_M[:-1])$; verifier receives
+    $w_M \leftarrow \tilde{w}(r''_M[:-1])$.
+  \Statex \quad\quad [Here $r''_M[:-1]$ denotes all but the last coordinate of $r''_M$.]
+  \Statex
+  \State \textbf{Verifier:} Compute:
+    \begin{align*}
+      z_M &= (1 - r''_M[-1])\,\tilde{x}(r''_M[:-1]) + r''_M[-1]\, w_M \\
+      e_M &= \tilde{f}_M(r', r''_M)\, z_M \\
+    \end{align*}
+    Check $H'' = e_M$.
+    \Statex \quad\quad [This verifies $p_M(r''_M) = e_M$.]
+\EndFor
+
+\Statex
+\Statex \textbf{Final checks:}
+\State \textbf{Verifier:} If any subprotocols output $\perp$ or checks fail,
+  output $\perp$; else output $\mathsf{True}$.
+
+\end{algorithmic}
+\end{algorithm}
+
+\begin{remark}[Structure of $p_M$]
+  The polynomial $p_M(r''_M)$ factored as:
+  \[
+    p_M(r''_M) = \tilde{M}(r'_M, r''_M) \cdot \tilde{z}(r''_M)
+  \]
+  where $\tilde{z}(r''_M) = z_M$ is computed by the verifier using
+  the oracle $\tilde{w}$. The extension $z = (x \| w)$ means:
+  \[
+    \tilde{z}(r''_M[:-1], t) =
+      (1 - t)\,\tilde{x}(r''_M[:-1]) + t\,\tilde{w}(r''_M[:-1]),
+  \]
+  so the verifier can compute $z_M$ using its knowledge of $x$ and one oracle
+  query to $\tilde{w}$.
+\end{remark}
+
+%-----------------------------------------------------------------------
+\section{Soundness of the Delphian PIOP}
+%-----------------------------------------------------------------------
+
+We now state the main soundness theorem for the Delphian PIOP.
+
+\begin{thmbox}[Theorem: Soundness of the Delphian PIOP]
+\begin{theorem}[Soundness of Delphian]
+  Let $n = 2^\ell$ and let $A, B, C \in \F^{n \times n}$ be an R1CS over $\F$,
+  and take $x \in \F^{n/2}$ with $x \notin \mathcal{L}_{A,B,C,n,\F}$.
+  Let $\mathbb{V}_D$ be the Delphian PIOP verifier. For any malicious PIOP
+  prover $\mathbb{P}^*$,
+  \[
+    \Pr\!\left[\out_{\mathbb{V}_D}\!\bigl[
+      \mathbb{P}^*(A, B, C, n, x) \leftrightarrow \mathbb{V}_D(A, B, C, x)
+    \bigr] = 1\right] \;\leq\; \frac{9\ell}{|\F|}.
+  \]
+\end{theorem}
+\end{thmbox}
+
+\begin{remark}[Interpreting the Bound]
+  The soundness error $\frac{9\ell}{|\F|}$ comes from the application of the
+  Schwartz--Zippel lemma across the different rounds and checks in the protocol:
+  \begin{itemize}
+    \item There are $\ell = \log n$ variables (and thus $\ell$ sumcheck rounds
+      in each of the sumchecks).
+    \item There are multiple sumcheck invocations (one for $h$, and one each
+      for $p_A$, $p_B$, $p_C$).
+    \item The constant 9 accounts for the total degree of all polynomials
+      involved across all checks.
+  \end{itemize}
+  For a large field $\F$ (e.g., a prime field with $|\F| \approx 2^{128}$), this
+  error is negligible: $\frac{9\ell}{|\F|} \approx \frac{9 \cdot 128}{2^{128}}$,
+  which is cryptographically small.
+\end{remark}
+
+\begin{remark}[Why Delphian?]
+  The Delphian PIOP is named to evoke the oracle at Delphi---just as the oracle
+  delivered answers to queries, the PIOP prover answers polynomial evaluation
+  queries. The structure of the protocol---committing to $\tilde{w}$, using
+  $\tau$-randomization to reduce to a single sumcheck, and then verifying the
+  resulting evaluation claims via additional sumchecks---is the backbone of many
+  practical SNARKs (e.g., Marlin, PLONK variants compiled with polynomial
+  commitments).
+\end{remark}
+
+\subsection{High-Level Soundness Argument}
+
+The soundness proof proceeds by a sequence of reductions:
+
+\begin{enumerate}
+  \item \textbf{If $x \notin \mathcal{L}_{A,B,C}$:} then $f_{\mathrm{res}}$
+    is not identically zero on $\bits^{\log n}$, i.e., there exists some
+    $\hat{x} \in \bits^{\log n}$ with $f_{\mathrm{res}}(\hat{x}) \neq 0$.
+
+  \item \textbf{Randomization by $\tau$:} With probability at least
+    $1 - n/|\F|$ over the choice of $\tau$, the sum
+    $\sum_{x} \widetilde{\mathrm{eq}}(\tau, x)\, g_{\mathrm{res}}(x) \neq 0$.
+    So the claimed sum of 0 is incorrect.
+
+  \item \textbf{Sumcheck soundness:} By sumcheck soundness (Schwartz--Zippel),
+    a cheating prover cannot convince the verifier that the sum is 0 when it
+    is nonzero, except with probability $O(\ell/|\F|)$ per sumcheck.
+
+  \item \textbf{Evaluation check soundness:} The verifier's final evaluation
+    checks (checking $H'' = e_M$, checking $v_A \cdot v_B - v_C = G'$, etc.)
+    each fail for a cheating prover with high probability by Schwartz--Zippel.
+
+  \item \textbf{Union bound:} Taking a union bound over all checks gives total
+    soundness error $\leq 9\ell / |\F|$.
+\end{enumerate}
+
+\subsection{Summary of the Delphian PIOP}
+
+\begin{center}
+\begin{tikzpicture}[
+    node distance=1.2cm and 3cm,
+    box/.style={draw, rounded corners, fill=blue!8, minimum width=3.5cm,
+      minimum height=1cm, align=center, font=\small},
+    arr/.style={-{Stealth}, thick},
+  ]
+  \node[box] (w)   {Prover sends $\mathcal{O}_{\tilde{w}}$};
+  \node[box, below=of w] (tau)  {V sends $\tau \in \F^{\log n}$};
+  \node[box, below=of tau] (h)   {Prover sends $\mathcal{O}_h$};
+  \node[box, below=of h] (sc1)  {Sumcheck on $h$ (sum = 0)};
+  \node[box, below=of sc1] (check1) {V checks $v_A v_B - v_C = G'$};
+  \node[box, below=of check1] (sc2) {Sumcheck on $p_M$ (sum = $v_M$)\\for $M \in \{A,B,C\}$};
+  \node[box, below=of sc2] (qw) {V queries $\mathcal{O}_{\tilde{w}}$,\\checks $H'' = e_M$};
+  \node[box, below=of qw] (out) {Output accept/reject};
+
+  \draw[arr] (w) -- (tau);
+  \draw[arr] (tau) -- (h);
+  \draw[arr] (h) -- (sc1);
+  \draw[arr] (sc1) -- (check1);
+  \draw[arr] (check1) -- (sc2);
+  \draw[arr] (sc2) -- (qw);
+  \draw[arr] (qw) -- (out);
+\end{tikzpicture}
+\end{center}
+
+\bigskip
+\noindent The complexity of the Delphian PIOP:
+\begin{itemize}
+  \item \textbf{Prover oracles:} $\tilde{w}$ (the MLE of the witness),
+    $h$ (a product polynomial), $p_A, p_B, p_C$ (three ``sumcheck'' polynomials),
+    plus all the univariate sumcheck round polynomials.
+  \item \textbf{Verifier oracle queries:} $O(\log n)$ queries per sumcheck
+    invocation; $O(\log n)$ total queries to $\mathcal{O}_{\tilde{w}}$.
+  \item \textbf{Soundness error:} $O(\log n / |\F|)$, negligible for large fields.
+  \item \textbf{Completeness:} Perfect, assuming honest prover.
+\end{itemize}
+
+%-----------------------------------------------------------------------
+\section*{Conclusion}
+%-----------------------------------------------------------------------
+
+This lecture introduced the framework of Interactive Oracle Proofs (IOPs) and
+Polynomial IOPs (PIOPs), which form the theoretical foundation for modern
+succinct proof systems. Key takeaways:
+
+\begin{enumerate}
+  \item An \textbf{IOP} generalizes interactive proofs by allowing oracle
+    messages; the verifier only queries a few positions rather than reading the
+    full proof.
+  \item A \textbf{PIOP} specializes to polynomial oracles, where queries are
+    evaluation queries. This matches perfectly with polynomial commitment schemes
+    for compilation to non-interactive proofs.
+  \item \textbf{Sumcheck as a PIOP:} The sumcheck protocol is naturally expressed
+    as a PIOP, and it is the workhorse inside the Delphian protocol.
+  \item \textbf{The Delphian PIOP:} Proves R1CS-Sat (which encodes all of NP)
+    by:
+    \begin{enumerate}[label=(\alph*)]
+      \item Committing to the MLE $\tilde{w}$ of the witness.
+      \item Using a random $\tau$ to reduce the ``all-zero on hypercube'' check
+        to a single sumcheck via the equality MLE.
+      \item Running sumcheck to reduce to polynomial evaluation claims.
+      \item Verifying those evaluation claims with additional sumchecks on
+        $p_A, p_B, p_C$.
+    \end{enumerate}
+  \item \textbf{Soundness:} The Delphian PIOP has soundness error
+    $9\ell/|\F|$, which is negligible for large fields.
+\end{enumerate}
+
+\end{document}
