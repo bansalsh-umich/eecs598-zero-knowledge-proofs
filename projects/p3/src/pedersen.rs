@@ -84,6 +84,7 @@ pub mod open {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
+        // TODO
         todo!()
     }
 
