@@ -84,8 +84,22 @@ pub mod open {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        // TODO
-        todo!()
+        // Reference: https://www.zkdocs.com/docs/zkdocs/commitments/pedersen/#proof-of-knowledge-of-secret
+        // First generate a temporary commitment
+        let t1 = E::Scalar::random(&mut rng);
+        let t2 = E::Scalar::random(&mut rng);
+        let temporary_commitment = commit(t1, t2, &params.generators);
+        trans.append_message("R", temporary_commitment);
+
+        let c = trans.get_challenge("challenge");
+        let z1 = witness.x * c + t1;
+        let z2 = witness.r * c + t2;
+
+        return Proof {
+            c,
+            z_x: z1,
+            z_r: z2,
+        };
     }
 
     /// Verify a proof of knowledge of a Pedersen commitment opening.
@@ -95,7 +109,14 @@ pub mod open {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        let [g, h] = params.generators;
+        let temporary_commitment = E::msm(&[pf.z_x, pf.z_r, -pf.c], &[g, h, statement.commitment]);
+        trans.append_message("R", temporary_commitment);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+        anyhow::ensure!(c == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
