@@ -84,12 +84,16 @@ pub mod open {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
+        trans.append_message("statement", statement);
         // Reference: https://www.zkdocs.com/docs/zkdocs/commitments/pedersen/#proof-of-knowledge-of-secret
         // First generate a temporary commitment
         let t1 = E::Scalar::random(&mut rng);
         let t2 = E::Scalar::random(&mut rng);
         let temporary_commitment = commit(t1, t2, &params.generators);
         trans.append_message("R", temporary_commitment);
+        println!("T1: {t1}");
+        println!("T2: {t2}");
+        println!("R: {temporary_commitment:?}");
 
         let c = trans.get_challenge("challenge");
         let z1 = witness.x * c + t1;
@@ -109,6 +113,8 @@ pub mod open {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
+        trans.append_message("statement", statement);
+
         let [g, h] = params.generators;
         let temporary_commitment = E::msm(&[pf.z_x, pf.z_r, -pf.c], &[g, h, statement.commitment]);
         trans.append_message("R", temporary_commitment);
@@ -174,7 +180,29 @@ pub mod equals {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let tx = E::Scalar::random(&mut rng);
+        let tr1 = E::Scalar::random(&mut rng);
+        let tr2 = E::Scalar::random(&mut rng);
+
+        let R1 = commit(tx, tr1, &params.generators);
+        trans.append_message("R1", R1);
+
+        let R2 = commit(tx, tr2, &params.generators);
+        trans.append_message("R2", R2);
+
+        let c = trans.get_challenge("challenge");
+        let zx = witness.x * c + tx;
+        let zr1 = witness.r1 * c + tr1;
+        let zr2 = witness.r2 * c + tr2;
+
+        return Proof {
+            c,
+            z_x: zx,
+            z_r1: zr1,
+            z_r2: zr2,
+        };
     }
 
     /// Verify a proof that two commitments hide the same value.
@@ -184,7 +212,17 @@ pub mod equals {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let R1 = commit(pf.z_x, pf.z_r1, &params.generators) - statement.comm1 * pf.c;
+        trans.append_message("R1", R1);
+        let R2 = commit(pf.z_x, pf.z_r2, &params.generators) - statement.comm2 * pf.c;
+        trans.append_message("R2", R2);
+
+        let challenge: E::Scalar = trans.get_challenge("challenge");
+        anyhow::ensure!(challenge == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
