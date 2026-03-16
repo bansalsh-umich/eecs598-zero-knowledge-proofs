@@ -1,11 +1,13 @@
+use std::os::macos::raw::stat;
+
 use crate::{
     pedersen::{self, CommittedValue},
     transcript::Transcript,
 };
 use anyhow::Result;
 use itertools::Itertools;
-use p1::{Random, Zero};
-use p2::{combined::CombinedMLE, ec::EllipticCurve};
+use p1::{One, Random, Zero};
+use p2::{combined::CombinedMLE, ec::EllipticCurve, sparsemat::SparseMatrix};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,7 +59,7 @@ pub struct Proof<E: EllipticCurve> {
 /// derives a challenge from the transcript, and partially evaluates.
 ///
 /// After all rounds, the prover commits to the final evaluation and
-/// collapses all round checks into a single dot-product relation, which is
+/// collapses all round checksinto a single dot-product relation, which is
 /// proved via `pedersen::dot_product`.
 ///
 /// Returns the proof, the challenge vector, and the blinding factor for the
@@ -70,6 +72,17 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> (Proof<E>, Vec<E::Scalar>, E::Scalar) {
+    trans.append_message("statement", statement);
+    let prev = &witness.polynomial;
+    let commitments = vec![];
+
+    for i in 0..statement.num_vars {
+        let poly = prev.to_univariate(0);
+        let coefficients = poly.coeffs().to_vec();
+        let sub_gens = params.vec_gens[0..i];
+        let o_j = E::Scalar::random(rng);
+    }
+
     todo!()
 }
 
@@ -87,5 +100,44 @@ pub fn verify<E: EllipticCurve>(
     proof: &Proof<E>,
     trans: &mut Transcript,
 ) -> Result<(E, Vec<E::Scalar>)> {
-    todo!()
+    trans.append_message("statement", statement);
+
+    let mut commitments = Vec::new();
+    commitments.reserve(statement.num_vars);
+
+    for i in 0..statement.num_vars {
+        trans.append_message(format!("C{}", i).as_str(), proof.round_commitments[i]);
+        let challenge_i: E::Scalar = trans.get_challenge(format!("challenge_{i}").as_str());
+        commitments.push(challenge_i);
+    }
+
+    // Construct the batched check
+    let mut entries: Vec<(usize, usize, E::Scalar)> = vec![];
+
+    for i in 0..statement.num_vars {
+        entries.push((i, i * statement.max_degree, E::Scalar::one()));
+        for j in 0..statement.max_degree + 1 {
+            entries.push((i, i * j, E::Scalar::one()));
+        }
+
+        if i > 0 {
+            let mut variable = E::Scalar::one();
+            for j in 0..statement.max_degree + 1 {
+                entries.push((i, statement.max_degree + 1 + i * j, -variable));
+                variable *= commitments[i - 1];
+            }
+        }
+    }
+
+    let rows = statement.num_vars + 1;
+    let cols = statement.num_vars * (statement.max_degree + 1);
+    let batched_coefficients: SparseMatrix<E::Scalar> =
+        SparseMatrix::from_entries(rows, cols, entries);
+
+    let C_pi: E = proof.round_commitments[1..statement.num_vars]
+        .iter()
+        .copied()
+        .sum();
+
+    todo!();
 }
