@@ -73,16 +73,34 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> (Proof<E>, Vec<E::Scalar>, E::Scalar) {
+    
     trans.append_message("statement", statement);
-    let prev = &witness.polynomial;
-    let commitments = vec![];
-
+    let mut current_polynomial = witness.polynomial; 
+    let mut round_commitments = Vec::with_capacity(statement.num_vars);
+    let mut challenges = Vec::with_capacity(statement.num_vars);
+    let d = statement.max_degree;
+    let chunk_size = d + 1; 
+    let [g,h] = params.scalar_gens; 
+    
+    // Round commitments 
     for i in 0..statement.num_vars {
-        let poly = prev.to_univariate(0);
-        let coefficients = poly.coeffs().to_vec();
-        let sub_gens = params.vec_gens[0..i];
+        let g_i = current_polynomial.to_univariate(0);
         let o_j = E::Scalar::random(rng);
+        let mut round_coefficients = vec![E::Scalar::zero(); chunk_size];
+        for (j, c) in g_i.coeffs().iter().enumerate() {
+            round_coefficients[j] = *c;
+        }
+        let chunk_generators = &params.vec_gens[i * chunk_size .. (i + 1) * chunk_size];
+        // Round commitment 
+        let c_i = pedersen::vector_commit(&round_coefficients, o_j, chunk_generators, h); 
+        round_commitments.push(c_i);
+        // TO DO: Ask about this 
+        trans.append_message(format!("C{}", i).as_str(), &c_i);
+        let r_i: E::Scalar = trans.get_challenge(format!("challenge_{i}").as_str());
+        challenges.push(r_i);
+        current_polynomial = current_polynomial.partial_eval(&[r_i]);
     }
+
 
     todo!()
 }
