@@ -1,5 +1,8 @@
 #![allow(unused)]
-use crate::{pedersen, transcript::Transcript};
+use crate::{
+    pedersen::{self},
+    transcript::Transcript,
+};
 use anyhow::Result;
 use p1::Zero;
 use p1::poly::Multilinear;
@@ -140,9 +143,67 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> Proof<E> {
+    trans.append_message("statement", statement);
+
     // Cross-consistency between statement and witness.
-    assert_eq!(statement.point.len(), witness.poly.num_vars(), "point.len() != num_vars");
-    todo!()
+    assert_eq!(
+        statement.point.len(),
+        witness.poly.num_vars(),
+        "point.len() != num_vars"
+    );
+
+    let point_dimension = statement.point.len();
+    let half_dimension = point_dimension >> 1; // We know that it's a power of 2, so this is safe.
+    let (r_bot, r_top) = statement.point.split_at(half_dimension);
+
+    let a = Multilinear::eq_tilde(r_bot);
+    let b = Multilinear::eq_tilde(r_top);
+
+    let hidden_vec_commitment = E::msm(&b.evals, &statement.comm_rows);
+
+    let m = point_dimension;
+    let c = {
+        let mut c = vec![E::Scalar::zero(); m];
+        for i in 0..m {
+            for j in 0..m {
+                c[j] += b[i] * witness.poly.evals[i * m + j];
+            }
+        }
+        c
+    };
+
+    // Looked up how to make the for loop idiomatic
+    let oc: E::Scalar = witness
+        .openings
+        .iter()
+        .zip(&b.evals)
+        .map(|(&o, &b)| o * b)
+        .sum();
+
+    // Now, we can do a dot product proof that combined_commitment commits to <c, a>
+    let proof = {
+        let dp_params = pedersen::dot_product::PublicParams {
+            scalar_gens: params.scalar_gens,
+            vec_gens: params.vec_gens.clone(),
+        };
+
+        let dp_stmt = pedersen::dot_product::Statement {
+            a: a.evals,
+            comm_x: hidden_vec_commitment,
+            comm_result: statement.comm_eval,
+        };
+
+        let dp_witness = pedersen::dot_product::Witness::<E> {
+            x: c,
+            r_x: oc,
+            result: witness.eval,
+            r_result: witness.r_eval,
+        };
+
+        pedersen::dot_product::prove(&dp_params, &dp_stmt, &dp_witness, trans, rng)
+    };
+
+    Proof { dp_proof: proof }
 }
 
 /// Verify an opening proof.
@@ -156,5 +217,27 @@ pub fn verify<E: EllipticCurve>(
     proof: &Proof<E>,
     trans: &mut Transcript,
 ) -> Result<()> {
-    todo!()
+    trans.append_message("statement", statement);
+
+    let point_dimension = statement.point.len();
+    let half_dimension = point_dimension >> 1; // We know that it's a power of 2, so this is safe.
+    let (r_bot, r_top) = statement.point.split_at(half_dimension);
+
+    let a = Multilinear::eq_tilde(r_bot);
+    let b = Multilinear::eq_tilde(r_top);
+
+    let hidden_vec_commitment = E::msm(&b.evals, &statement.comm_rows);
+
+    let dp_params = pedersen::dot_product::PublicParams {
+        scalar_gens: params.scalar_gens,
+        vec_gens: params.vec_gens.clone(),
+    };
+
+    let dp_stmt = pedersen::dot_product::Statement {
+        a: a.evals,
+        comm_x: hidden_vec_commitment,
+        comm_result: statement.comm_eval,
+    };
+
+    pedersen::dot_product::verify(&dp_params, &dp_stmt, &proof.dp_proof, trans)
 }
