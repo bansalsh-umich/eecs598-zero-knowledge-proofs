@@ -2,6 +2,7 @@ use std::os::macos::raw::stat;
 
 use crate::{
     pedersen::{self, CommittedValue},
+    quokka::commit,
     transcript::Transcript,
 };
 use anyhow::Result;
@@ -111,21 +112,33 @@ pub fn verify<E: EllipticCurve>(
         commitments.push(challenge_i);
     }
 
-    // Construct the batched check
+    trans.append_message("comm_final", proof.comm_final);
+
+    // Construct the verifier matrix M from Section 4.2.
     let mut entries: Vec<(usize, usize, E::Scalar)> = vec![];
+    let block_offset = |round: usize| round * (statement.max_degree + 1);
 
+    // Scalar Constants, to remove the final term
     for i in 0..statement.num_vars {
-        entries.push((i, i * statement.max_degree, E::Scalar::one()));
-        for j in 0..statement.max_degree + 1 {
-            entries.push((i, i * j, E::Scalar::one()));
-        }
-
-        if i > 0 {
-            let mut variable = E::Scalar::one();
-            for j in 0..statement.max_degree + 1 {
-                entries.push((i, statement.max_degree + 1 + i * j, -variable));
-                variable *= commitments[i - 1];
+        for j in 0..=statement.max_degree {
+            if j == 0 {
+                entries.push((i, block_offset(i), E::Scalar::one()));
             }
+            entries.push((i, block_offset(i) + j, E::Scalar::one()));
+        }
+    }
+
+    // Random Challenges
+    for i in 1..=statement.num_vars {
+        let mut power = E::Scalar::one();
+        for j in 0..=statement.max_degree {
+            let term = if i < statement.num_vars {
+                -power
+            } else {
+                power
+            };
+            entries.push((i, block_offset(i - 1) + j, term));
+            power *= commitments[i - 1];
         }
     }
 
@@ -134,10 +147,35 @@ pub fn verify<E: EllipticCurve>(
     let batched_coefficients: SparseMatrix<E::Scalar> =
         SparseMatrix::from_entries(rows, cols, entries);
 
-    let C_pi: E = proof.round_commitments[1..statement.num_vars]
-        .iter()
-        .copied()
-        .sum();
+    let mut rho: Vec<E::Scalar> = Vec::with_capacity(rows);
+    for i in 0..statement.num_vars + 1 {
+        rho.push(trans.get_challenge(&format!("rho{}", i)));
+    }
 
-    todo!();
+    let mut y = vec![E::Scalar::zero(); cols];
+    for i in 0..rows {
+        for (col, &coefficient) in batched_coefficients.row_iter(i) {
+            y[col] += rho[col] * coefficient;
+        }
+    }
+
+    let comm_combined: E = proof.round_commitments.iter().copied().sum();
+    let comm_result = E::msm(
+        &[rho[0], rho[statement.num_vars]],
+        &[statement.comm_sum, proof.comm_final],
+    );
+
+    let dp_params = pedersen::dot_product::PublicParams {
+        scalar_gens: params.scalar_gens,
+        vec_gens: params.vec_gens.clone(),
+    };
+
+    let dp_statement = pedersen::dot_product::Statement {
+        a: y,
+        comm_x: comm_combined,
+        comm_result,
+    };
+
+    pedersen::dot_product::verify(&dp_params, &dp_statement, &proof.dp_proof, trans)?;
+    return Ok((proof.comm_final, commitments));
 }
