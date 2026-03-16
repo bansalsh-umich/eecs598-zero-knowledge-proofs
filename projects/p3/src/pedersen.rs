@@ -416,6 +416,8 @@ pub mod dot_product {
     ) -> Proof<E> {
         trans.append_message("statement", statement);
 
+        let [_, h] = params.scalar_gens;
+
         let mut d = Vec::new();
         d.reserve(params.vec_gens.len());
         for _ in 0..params.vec_gens.len() {
@@ -423,9 +425,33 @@ pub mod dot_product {
         }
 
         let o1 = E::Scalar::random(&mut rng);
-        let o2 = E::Scalar::random(&mut rng);
+        let C1 = vector_commit(&d, o1, &params.vec_gens, h);
+        trans.append_message("C1", C1);
 
-        todo!()
+        let o2 = E::Scalar::random(&mut rng);
+        let da = inner_product(&d, &statement.a);
+        let C2 = commit(da, o2, &params.scalar_gens);
+        trans.append_message("C2", C2);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+
+        debug_assert_eq!(witness.x.len(), d.len());
+        let zx: Vec<_> = witness
+            .x
+            .iter()
+            .zip(d.iter())
+            .map(|(&x, &d)| c * x + d)
+            .collect();
+
+        let zrx = c * witness.r_x + o1;
+        let zrv = c * witness.r_result + o2;
+
+        Proof {
+            c,
+            z_vec: zx,
+            z_beta: zrv,
+            z_delta: zrx,
+        }
     }
 
     /// Verify a proof that `y = <a, x>` for a committed vector `x` and committed
@@ -437,7 +463,20 @@ pub mod dot_product {
         trans: &mut Transcript,
     ) -> Result<()> {
         trans.append_message("statement", statement);
-        todo!()
+        let [g, h] = params.scalar_gens;
+
+        let C1 =
+            vector_commit(&pf.z_vec, pf.z_delta, &params.vec_gens, h) - statement.comm_x * pf.c;
+        let product = inner_product(&pf.z_vec, &statement.a);
+        let C2 = commit(product, pf.z_beta, &params.scalar_gens) - statement.comm_result * pf.c;
+        trans.append_message("C1", C1);
+        trans.append_message("C2", C2);
+
+        let e: E::Scalar = trans.get_challenge("challenge");
+
+        anyhow::ensure!(e == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
