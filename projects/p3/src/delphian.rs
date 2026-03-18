@@ -259,6 +259,91 @@ pub fn prove<E: EllipticCurve>(
     let x_tilde = statement.x.multilinear_extension();
 
     let num_rows_w = 1 << (w_tilde.num_vars() / 2);
+
+    let w_openings: Vec<E::Scalar> = (0..num_rows_w)
+        .map(|_| E::Scalar::random(&mut rng))
+        .collect();
+    let comm_w = quokka::commit(&w_tilde, &w_openings, &params.quokka_params());
+    trans.append_message("comm_w", comm_w);
+
+    let r: Vec<E::Scalar> = (0..log_rows)
+        .map(|i| trans.get_challenge(format!("r{i}").as_str()))
+        .collect();
+
+    let Az_tilde = statement.A.mul_sparse(&z).multilinear_extension();
+    let Bz_tilde = statement.B.mul_sparse(&z).multilinear_extension();
+    let Cz_tilde = statement.C.mul_sparse(&z).multilinear_extension();
+    let r_eq_tilde = Multilinear::eq_tilde(&r);
+
+    let h = CombinedMLE::new(
+        3,
+        |val| val[0] * (val[1] * val[2] - val[3]),
+        vec![
+            r_eq_tilde,
+            Az_tilde.clone(),
+            Bz_tilde.clone(),
+            Cz_tilde.clone(),
+        ],
+    );
+
+    let (sc_phase1_proof, r_prime, comm_h_r_prime) = {
+        let sumcheck_statement = sumcheck::Statement {
+            comm_sum: E::zero(),
+            num_vars: log_rows,
+            max_degree: 3,
+        };
+        let witness = sumcheck::Witness::<E> {
+            polynomial: h,
+            sum: E::Scalar::zero(),
+            r_sum: E::Scalar::zero(),
+        };
+        sumcheck::prove(
+            &params.sc_phase1_params(),
+            &sumcheck_statement,
+            &witness,
+            trans,
+            rng,
+        )
+    };
+
+    let matrices = [&statement.A, &statement.B, &statement.C];
+    let (p_ms, committed_vs): (Vec<_>, Vec<_>) = matrices
+        .into_iter()
+        .map(|matrix| {
+            let m_at_r_prime = matrix.multilinear_extension().partial_eval(&r_prime);
+            let p_m = CombinedMLE::new(
+                2,
+                |vals| vals[0] * vals[1],
+                vec![m_at_r_prime, z_tilde.clone()],
+            );
+
+            let v_m = p_m.sum_over_hypercube();
+            let cv_m = CommittedValue::<E>::new(v_m, &mut rng, &params.scalar_gens);
+
+            (p_m, cv_m)
+        })
+        .unzip();
+
+    let p_a = &p_ms[0];
+    let p_b = &p_ms[1];
+    let p_c = &p_ms[2];
+
+    let cv_a = &committed_vs[0];
+    let cv_b = &committed_vs[1];
+    let cv_c = &committed_vs[2];
+
+    let v_ab = cv_a.val * cv_b.val;
+    let cv_ab = CommittedValue::<E>::new(v_ab, &mut rng, &params.scalar_gens);
+
+    // product proof for v_A = v_B
+    let proof = {
+        let statement = pedersen::product::Statement {
+            comm_x: *cv_a,
+            comm_y: *cv_b,
+            comm_z: cv_ab,
+        };
+    };
+
     todo!()
 }
 
@@ -293,8 +378,67 @@ pub fn verify<E: EllipticCurve>(
     let num_cols = statement.A.cols;
     let log_rows = num_rows.ilog2() as usize;
     let log_cols = num_cols.ilog2() as usize;
-
+    // Step 1: Initial params
     let comm_w = proof.comm_w;
+    trans.append_message("parameters", params);
+    trans.append_message("statement", statement);
+    trans.append_message("comm_w", comm_w);
+    let [g, h] = params.scalar_gens;
+    let r = trans.get_challenge("tau");
 
+    // Step 2: Main sumcheck
+    let main_params = sumcheck::PublicParams {
+        vec_gens: params.phase1_sc_gens.clone(),
+        scalar_gens: params.scalar_gens,
+    };
+    let main_statement = sumcheck::Statement {
+        comm_sum: E::zero(),
+        num_vars: log_rows,
+        max_degree: 3,
+    };
+    let (C_h, r_prime) =
+        sumcheck::verify(&main_params, &main_statement, &proof.sc_phase1_proof, trans)?;
+    // Step 3: per matrix sumcheck
+    let matrices = [&statement.A, &statement.B, &statement.C];
+    for i in 0..matrices.len() {
+        let matrix = matrices[i];
+        let matrix_proof = proof.matrix_proofs[i];
+        let round_params = sumcheck::PublicParams {
+            vec_gens: params.phase2_sc_gens,
+            scalar_gens: params.scalar_gens,
+        };
+        let round_statement = sumcheck::Statement {
+            comm_sum: matrix_proof.comm_v,
+            num_vars: log_cols,
+            max_degree: 2,
+        };
+        let (round_commit, r_dblprime) = sumcheck::verify(
+            &round_params,
+            &round_statement,
+            &matrix_proof.sc_proof,
+            trans,
+        )?;
+        let r_top = &r_prime[..log_cols - 1];
+        let quokka_params = quokka::PublicParams {
+            vec_gens: params.quokka_gens,
+            scalar_gens: params.scalar_gens,
+        };
+        let quokka_statement = quokka::Statement {
+            comm_rows: proof.comm_w.clone(),
+            point: r_top.to_vec(),
+            comm_eval: matrix_proof.comm_w_m,
+        };
+        quokka::verify(
+            &quokka_params,
+            &quokka_statement,
+            &matrix_proof.quokka_proof,
+            trans,
+        );
+        let x_mle = statement.x.multilinear_extension();
+        let x_tilde = x_mle.evaluate(&r);
+        let r_last = r_prime[log_cols - 1];
+        let C_zm = (1 - r_top) * x_tilde * (r_top * g) + (r_top * matrix_proof.comm_w_m);
+    }
+    // Step 4: Final check - Product proof and Equals proof
     todo!()
 }

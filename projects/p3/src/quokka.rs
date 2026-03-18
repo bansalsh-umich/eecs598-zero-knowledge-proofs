@@ -143,6 +143,7 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> Proof<E> {
+    trans.append_message("params", params);
     trans.append_message("statement", statement);
 
     // Cross-consistency between statement and witness.
@@ -217,6 +218,7 @@ pub fn verify<E: EllipticCurve>(
     proof: &Proof<E>,
     trans: &mut Transcript,
 ) -> Result<()> {
+    trans.append_message("params", params);
     trans.append_message("statement", statement);
 
     let point_dimension = statement.point.len();

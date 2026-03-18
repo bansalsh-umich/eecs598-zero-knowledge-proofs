@@ -108,6 +108,7 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> (Proof<E>, Vec<E::Scalar>, E::Scalar) {
+    trans.append_message("params", params);
     trans.append_message("statement", statement);
     let mut current_polynomial = witness.polynomial.clone();
     let mut round_commitments = Vec::with_capacity(statement.num_vars);
@@ -211,6 +212,7 @@ pub fn verify<E: EllipticCurve>(
     proof: &Proof<E>,
     trans: &mut Transcript,
 ) -> Result<(E, Vec<E::Scalar>)> {
+    trans.append_message("params", params);
     trans.append_message("statement", statement);
 
     let mut challenges = Vec::new();
