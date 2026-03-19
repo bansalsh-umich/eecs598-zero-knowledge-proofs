@@ -5,7 +5,7 @@ use crate::{
     transcript::Transcript,
 };
 use anyhow::Result;
-use p1::{Random, Zero, poly::Multilinear};
+use p1::{One, Random, Zero, poly::Multilinear};
 use p2::{
     combined::CombinedMLE,
     ec::EllipticCurve,
@@ -378,14 +378,18 @@ pub fn verify<E: EllipticCurve>(
     let num_cols = statement.A.cols;
     let log_rows = num_rows.ilog2() as usize;
     let log_cols = num_cols.ilog2() as usize;
+
     // Step 1: Initial params
-    let comm_w = proof.comm_w;
+    let comm_w = proof.comm_w.clone();
     trans.append_message("parameters", params);
     trans.append_message("statement", statement);
     trans.append_message("comm_w", comm_w);
     let [g, h] = params.scalar_gens;
-    let r = trans.get_challenge("tau");
-
+    let mut r: Vec<E::Scalar> = Vec::with_capacity(log_rows); // Also known as tau, the spec uses r and tau
+    for _ in 0..log_rows {
+    let t: E::Scalar = trans.get_challenge("tau");
+    r.push(t);
+    }
     // Step 2: Main sumcheck
     let main_params = sumcheck::PublicParams {
         vec_gens: params.phase1_sc_gens.clone(),
@@ -398,13 +402,15 @@ pub fn verify<E: EllipticCurve>(
     };
     let (C_h, r_prime) =
         sumcheck::verify(&main_params, &main_statement, &proof.sc_phase1_proof, trans)?;
+
     // Step 3: per matrix sumcheck
     let matrices = [&statement.A, &statement.B, &statement.C];
     for i in 0..matrices.len() {
+        // First do the per round sumcheck verification
         let matrix = matrices[i];
-        let matrix_proof = proof.matrix_proofs[i];
+        let matrix_proof = proof.matrix_proofs[i].clone();
         let round_params = sumcheck::PublicParams {
-            vec_gens: params.phase2_sc_gens,
+            vec_gens: params.phase2_sc_gens.clone(),
             scalar_gens: params.scalar_gens,
         };
         let round_statement = sumcheck::Statement {
@@ -418,9 +424,11 @@ pub fn verify<E: EllipticCurve>(
             &matrix_proof.sc_proof,
             trans,
         )?;
-        let r_top = &r_prime[..log_cols - 1];
+
+        // Now do the per-round quokka opening check
+        let r_top = &r_dblprime[..log_cols - 1];
         let quokka_params = quokka::PublicParams {
-            vec_gens: params.quokka_gens,
+            vec_gens: params.quokka_gens.clone(),
             scalar_gens: params.scalar_gens,
         };
         let quokka_statement = quokka::Statement {
@@ -433,12 +441,66 @@ pub fn verify<E: EllipticCurve>(
             &quokka_statement,
             &matrix_proof.quokka_proof,
             trans,
-        );
+        )?;
+
+        // Lastly do the equality proofs between the committed values C_em and the committed sumcheck value C_pm (round commit)
         let x_mle = statement.x.multilinear_extension();
-        let x_tilde = x_mle.evaluate(&r);
-        let r_last = r_prime[log_cols - 1];
-        let C_zm = (1 - r_top) * x_tilde * (r_top * g) + (r_top * matrix_proof.comm_w_m);
+        let x_tilde = x_mle.evaluate(r_top);
+        let r_last = r_dblprime[log_cols - 1];
+        let C_zm: E = (g * x_tilde) * (E::Scalar::one() - r_last) + matrix_proof.comm_w_m * r_last;
+        let mut matrix_point = r_prime.clone();
+        matrix_point.extend_from_slice(&r_dblprime);
+        let m_mle = matrix.multilinear_extension();
+        let m_val = m_mle.evaluate(&matrix_point); // M_tilde formation
+        let C_em: E = C_zm * m_val;
+        let equals_statement = pedersen::equals::Statement {
+            comm1: C_em,
+            comm2: round_commit,
+        };
+        let equals_params = pedersen::equals::PublicParams {
+            generators: params.scalar_gens,
+        };
+        pedersen::equals::verify(
+            &equals_params,
+            &equals_statement,
+            &matrix_proof.equals_proof,
+            trans,
+        )?;
     }
-    // Step 4: Final check - Product proof and Equals proof
-    todo!()
+
+    // Step 4: Final check: Product proof, Open proof, and lastly, the Equals proof
+    let C_va = proof.matrix_proofs[0].comm_v;
+    let C_vb = proof.matrix_proofs[1].comm_v;
+    let C_vc = proof.matrix_proofs[2].comm_v;
+    let prod_params = pedersen::product::PublicParams {
+        generators: params.scalar_gens,
+    };
+    let prod_statement = pedersen::product::Statement {
+        comm_x: C_va,
+        comm_y: C_vb,
+        comm_z: proof.comm_v_ab,
+    };
+    pedersen::product::verify(&prod_params, &prod_statement, &proof.product_proof, trans)?;
+    let open_params = pedersen::open::PublicParams {
+        generators: params.scalar_gens,
+    };
+    let open_statement = pedersen::open::Statement { commitment: C_vc };
+    pedersen::open::verify(&open_params, &open_statement, &proof.open_proof, trans)?;
+    let equals_params = pedersen::equals::PublicParams {
+        generators: params.scalar_gens,
+    };
+    let eq_mle = Multilinear::eq_tilde(&r);
+    let eq_eval = eq_mle.evaluate(&r_prime); // known as "e" in the spec
+    let equals_statement = pedersen::equals::Statement {
+        comm1: (proof.comm_v_ab - C_vc) * eq_eval,
+        comm2: C_h,
+    };
+    pedersen::equals::verify(
+        &equals_params,
+        &equals_statement,
+        &proof.final_equals_proof,
+        trans,
+    )?;
+
+    Ok(())
 }
