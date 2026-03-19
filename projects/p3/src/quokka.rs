@@ -162,7 +162,7 @@ pub fn prove<E: EllipticCurve>(
 
     let hidden_vec_commitment = E::msm(&b.evals, &statement.comm_rows);
 
-    let m = point_dimension;
+    let m = 1usize << half_dimension;
     let c = {
         let mut c = vec![E::Scalar::zero(); m];
         for i in 0..m {

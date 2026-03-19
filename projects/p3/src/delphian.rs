@@ -405,7 +405,8 @@ pub fn prove<E: EllipticCurve>(
             let cz_m: E =
                 g * (E::Scalar::one() - r_last) * x_tilde.evaluate(&r_front) + cw_m.comm * r_last;
             let matrix_point: Vec<_> = r_prime.iter().chain(&r_prime_prime).cloned().collect();
-            let ce_m = cz_m * matrix.multilinear_extension().evaluate(&matrix_point);
+            let m_eval = matrix.multilinear_extension().evaluate(&matrix_point);
+            let ce_m = cz_m * m_eval;
 
             let statement = pedersen::equals::Statement {
                 comm1: ce_m,
@@ -413,8 +414,8 @@ pub fn prove<E: EllipticCurve>(
             };
 
             let witness = pedersen::equals::Witness {
-                x: v_m,
-                r1: cv_m.r,
+                x: p_m.evaluate(&r_prime_prime),
+                r1: m_eval * r_last * cw_m.r,
                 r2: sc_blinding_factor,
             };
 
@@ -488,7 +489,7 @@ pub fn prove<E: EllipticCurve>(
             comm2: sc_phase1_proof.comm_final,
         };
         let witness = pedersen::equals::Witness {
-            x: cv_a.val * cv_b.val - cv_c.val,
+            x: e * (cv_ab.val - cv_c.val),
             r1: e * (cv_ab.r - cv_c.r),
             r2: c_hrprime_blinding,
         };
