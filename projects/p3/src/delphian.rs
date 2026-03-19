@@ -328,7 +328,6 @@ pub fn prove<E: EllipticCurve>(
     let matrix_names = ["A", "B", "C"];
 
     let mut matrix_proofs = Vec::with_capacity(3);
-    let mut p_ms = Vec::with_capacity(3);
     let mut cv_ms = Vec::with_capacity(3);
 
     for (matrix, name) in matrices.iter().zip(&matrix_names) {
@@ -340,7 +339,6 @@ pub fn prove<E: EllipticCurve>(
                 vec![m_at_r_prime, z_tilde.clone()],
             )
         };
-        p_ms.push(p_m.clone());
 
         let v_m = p_m.sum_over_hypercube();
         let cv_m = CommittedValue::<E>::new(v_m, &mut rng, &params.scalar_gens);
@@ -438,16 +436,14 @@ pub fn prove<E: EllipticCurve>(
         });
     }
 
-    let p_a = &p_ms[0];
-    let p_b = &p_ms[1];
-    let p_c = &p_ms[2];
-
     let cv_a = &cv_ms[0];
     let cv_b = &cv_ms[1];
     let cv_c = &cv_ms[2];
 
     let v_ab = cv_a.val * cv_b.val;
     let cv_ab = CommittedValue::<E>::new(v_ab, &mut rng, &params.scalar_gens);
+
+    trans.append_message("cv_ab", cv_ab.comm);
 
     // product proof for v_A = v_B
     let product_proof = {
@@ -554,45 +550,54 @@ pub fn verify<E: EllipticCurve>(
     trans.append_message("statement", statement);
     trans.append_message("comm_w", comm_w);
     let [g, h] = params.scalar_gens;
-    let mut r: Vec<E::Scalar> = Vec::with_capacity(log_rows); // Also known as tau, the spec uses r and tau
-    for _ in 0..log_rows {
-        let t: E::Scalar = trans.get_challenge("tau");
-        r.push(t);
-    }
+
+    let r: Vec<E::Scalar> = (0..log_rows)
+        .map(|i| trans.get_challenge(format!("r{i}").as_str()))
+        .collect();
+
     // Step 2: Main sumcheck
-    let main_params = sumcheck::PublicParams {
-        vec_gens: params.phase1_sc_gens.clone(),
-        scalar_gens: params.scalar_gens,
-    };
     let main_statement = sumcheck::Statement {
         comm_sum: E::zero(),
         num_vars: log_rows,
         max_degree: 3,
     };
-    let (C_h, r_prime) =
-        sumcheck::verify(&main_params, &main_statement, &proof.sc_phase1_proof, trans)?;
+    let (C_h, r_prime) = sumcheck::verify(
+        &params.sc_phase1_params(),
+        &main_statement,
+        &proof.sc_phase1_proof,
+        trans,
+    )?;
 
     // Step 3: per matrix sumcheck
     let matrices = [&statement.A, &statement.B, &statement.C];
+    let matrix_names = ["A", "B", "C"];
+
     for i in 0..matrices.len() {
         // First do the per round sumcheck verification
         let matrix = matrices[i];
         let matrix_proof = proof.matrix_proofs[i].clone();
-        let round_params = sumcheck::PublicParams {
-            vec_gens: params.phase2_sc_gens.clone(),
-            scalar_gens: params.scalar_gens,
-        };
+
+        trans.append_message(
+            format!("cv_{}", matrix_names[i]).as_str(),
+            matrix_proof.comm_v,
+        );
+
         let round_statement = sumcheck::Statement {
             comm_sum: matrix_proof.comm_v,
             num_vars: log_cols,
             max_degree: 2,
         };
         let (round_commit, r_dblprime) = sumcheck::verify(
-            &round_params,
+            &params.sc_phase2_params(),
             &round_statement,
             &matrix_proof.sc_proof,
             trans,
         )?;
+
+        trans.append_message(
+            format!("cw_{}", matrix_names[i]).as_str(),
+            matrix_proof.comm_w_m,
+        );
 
         // Now do the per-round quokka opening check
         let r_top = &r_dblprime[..log_cols - 1];
@@ -636,6 +641,8 @@ pub fn verify<E: EllipticCurve>(
             trans,
         )?;
     }
+
+    trans.append_message("cv_ab", proof.comm_v_ab);
 
     // Step 4: Final check: Product proof, Open proof, and lastly, the Equals proof
     let C_va = proof.matrix_proofs[0].comm_v;
