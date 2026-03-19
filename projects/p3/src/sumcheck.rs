@@ -1,5 +1,3 @@
-use std::os::macos::raw::stat;
-
 use crate::{
     pedersen::{self, CommittedValue},
     quokka::commit,
