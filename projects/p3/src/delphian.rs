@@ -546,7 +546,7 @@ pub fn verify<E: EllipticCurve>(
 
     // Step 1: Initial params
     let comm_w = proof.comm_w.clone();
-    trans.append_message("parameters", params);
+    trans.append_message("params", params);
     trans.append_message("statement", statement);
     trans.append_message("comm_w", comm_w);
     let [g, h] = params.scalar_gens;
