@@ -387,8 +387,8 @@ pub fn verify<E: EllipticCurve>(
     let [g, h] = params.scalar_gens;
     let mut r: Vec<E::Scalar> = Vec::with_capacity(log_rows); // Also known as tau, the spec uses r and tau
     for _ in 0..log_rows {
-    let t: E::Scalar = trans.get_challenge("tau");
-    r.push(t);
+        let t: E::Scalar = trans.get_challenge("tau");
+        r.push(t);
     }
     // Step 2: Main sumcheck
     let main_params = sumcheck::PublicParams {
