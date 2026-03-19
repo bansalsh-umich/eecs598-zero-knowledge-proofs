@@ -240,6 +240,11 @@ pub fn prove<E: EllipticCurve>(
     trans: &mut Transcript,
     mut rng: impl rand::Rng,
 ) -> Proof<E> {
+    trans.append_message("params", params);
+    trans.append_message("statement", statement);
+
+    /////////////////////////////////
+
     // Cross-consistency between statement and witness.
     assert_eq!(statement.x.size, witness.w.size, "x.size != w.size");
     assert_eq!(
@@ -260,15 +265,24 @@ pub fn prove<E: EllipticCurve>(
 
     let num_rows_w = 1 << (w_tilde.num_vars() / 2);
 
+    //////////////////////////////
+    // setup
+    //////////////////////////////
+
     let w_openings: Vec<E::Scalar> = (0..num_rows_w)
         .map(|_| E::Scalar::random(&mut rng))
         .collect();
     let comm_w = quokka::commit(&w_tilde, &w_openings, &params.quokka_params());
-    trans.append_message("comm_w", comm_w);
+
+    trans.append_message("comm_w", comm_w.clone());
 
     let r: Vec<E::Scalar> = (0..log_rows)
         .map(|i| trans.get_challenge(format!("r{i}").as_str()))
         .collect();
+
+    //////////////////////////////
+    // Phase 1
+    //////////////////////////////
 
     let Az_tilde = statement.A.mul_sparse(&z).multilinear_extension();
     let Bz_tilde = statement.B.mul_sparse(&z).multilinear_extension();
@@ -286,7 +300,7 @@ pub fn prove<E: EllipticCurve>(
         ],
     );
 
-    let (sc_phase1_proof, r_prime, comm_h_r_prime) = {
+    let (sc_phase1_proof, r_prime, c_hrprime_blinding) = {
         let sumcheck_statement = sumcheck::Statement {
             comm_sum: E::zero(),
             num_vars: log_rows,
@@ -302,49 +316,204 @@ pub fn prove<E: EllipticCurve>(
             &sumcheck_statement,
             &witness,
             trans,
-            rng,
+            &mut rng,
         )
     };
 
+    //////////////////////////////
+    // Phase 2
+    //////////////////////////////
+
     let matrices = [&statement.A, &statement.B, &statement.C];
-    let (p_ms, committed_vs): (Vec<_>, Vec<_>) = matrices
-        .into_iter()
-        .map(|matrix| {
+    let matrix_names = ["A", "B", "C"];
+
+    let mut matrix_proofs = Vec::with_capacity(3);
+    let mut p_ms = Vec::with_capacity(3);
+    let mut cv_ms = Vec::with_capacity(3);
+
+    for (matrix, name) in matrices.iter().zip(&matrix_names) {
+        let p_m = {
             let m_at_r_prime = matrix.multilinear_extension().partial_eval(&r_prime);
-            let p_m = CombinedMLE::new(
+            CombinedMLE::new(
                 2,
                 |vals| vals[0] * vals[1],
                 vec![m_at_r_prime, z_tilde.clone()],
-            );
+            )
+        };
+        p_ms.push(p_m.clone());
 
-            let v_m = p_m.sum_over_hypercube();
-            let cv_m = CommittedValue::<E>::new(v_m, &mut rng, &params.scalar_gens);
+        let v_m = p_m.sum_over_hypercube();
+        let cv_m = CommittedValue::<E>::new(v_m, &mut rng, &params.scalar_gens);
+        cv_ms.push(cv_m);
 
-            (p_m, cv_m)
-        })
-        .unzip();
+        trans.append_message(format!("cv_{name}").as_str(), cv_m.comm);
+
+        let (sc_proof, r_prime_prime, sc_blinding_factor) = {
+            let sumcheck_statement = sumcheck::Statement {
+                comm_sum: cv_m.comm,
+                max_degree: 2,
+                num_vars: z_tilde.num_vars(),
+            };
+
+            let sumcheck_witness = sumcheck::Witness::<E> {
+                polynomial: p_m.clone(),
+                r_sum: cv_m.r,
+                sum: cv_m.val,
+            };
+
+            sumcheck::prove(
+                &params.sc_phase2_params(),
+                &sumcheck_statement,
+                &sumcheck_witness,
+                trans,
+                &mut rng,
+            )
+        };
+
+        let w_m = w_tilde.evaluate(&r_prime_prime[..r_prime_prime.len() - 1]);
+        let cw_m = CommittedValue::<E>::new(w_m, &mut rng, &params.scalar_gens);
+
+        trans.append_message(format!("cw_{name}").as_str(), cw_m.comm);
+
+        let quokka_proof = {
+            let statement = quokka::Statement {
+                comm_eval: cw_m.comm,
+                point: r_prime_prime[..r_prime_prime.len() - 1].to_vec(),
+                comm_rows: comm_w.clone(),
+            };
+
+            let witness = quokka::Witness {
+                eval: cw_m.val,
+                openings: w_openings.clone(),
+                poly: w_tilde.clone(),
+                r_eval: cw_m.r,
+            };
+
+            quokka::prove(
+                &params.quokka_params(),
+                &statement,
+                &witness,
+                trans,
+                &mut rng,
+            )
+        };
+
+        let equals_proof = {
+            let g = params.scalar_gens[0];
+            let r_last = r_prime_prime.last().copied().unwrap();
+            let r_front = &r_prime_prime[..r_prime_prime.len() - 1];
+
+            // CzM = (1−r''[−1])x~(r''[:−1])G+ r''[−1]CwM
+            let cz_m: E =
+                g * (E::Scalar::one() - r_last) * x_tilde.evaluate(&r_front) + cw_m.comm * r_last;
+            let matrix_point: Vec<_> = r_prime.iter().chain(&r_prime_prime).cloned().collect();
+            let ce_m = cz_m * matrix.multilinear_extension().evaluate(&matrix_point);
+
+            let statement = pedersen::equals::Statement {
+                comm1: ce_m,
+                comm2: sc_proof.comm_final,
+            };
+
+            let witness = pedersen::equals::Witness {
+                x: v_m,
+                r1: cv_m.r,
+                r2: sc_blinding_factor,
+            };
+
+            pedersen::equals::prove(
+                &params.sigma_params(),
+                &statement,
+                &witness,
+                trans,
+                &mut rng,
+            )
+        };
+
+        matrix_proofs.push(MatrixProof {
+            comm_v: cv_m.comm,
+            sc_proof: sc_proof,
+            comm_w_m: cw_m.comm,
+            equals_proof: equals_proof,
+            quokka_proof: quokka_proof,
+        });
+    }
 
     let p_a = &p_ms[0];
     let p_b = &p_ms[1];
     let p_c = &p_ms[2];
 
-    let cv_a = &committed_vs[0];
-    let cv_b = &committed_vs[1];
-    let cv_c = &committed_vs[2];
+    let cv_a = &cv_ms[0];
+    let cv_b = &cv_ms[1];
+    let cv_c = &cv_ms[2];
 
     let v_ab = cv_a.val * cv_b.val;
     let cv_ab = CommittedValue::<E>::new(v_ab, &mut rng, &params.scalar_gens);
 
     // product proof for v_A = v_B
-    let proof = {
+    let product_proof = {
         let statement = pedersen::product::Statement {
-            comm_x: *cv_a,
-            comm_y: *cv_b,
-            comm_z: cv_ab,
+            comm_x: cv_a.comm,
+            comm_y: cv_b.comm,
+            comm_z: cv_ab.comm,
         };
+
+        let witness = pedersen::product::Witness {
+            x: cv_a.val,
+            y: cv_b.val,
+            z: cv_ab.val,
+            rx: cv_a.r,
+            ry: cv_b.r,
+            rz: cv_ab.r,
+        };
+        pedersen::product::prove(
+            &params.product_params(),
+            &statement,
+            &witness,
+            trans,
+            &mut rng,
+        )
     };
 
-    todo!()
+    let open_proof = {
+        let statement = pedersen::open::Statement {
+            commitment: cv_c.comm,
+        };
+        let witness = pedersen::open::Witness {
+            r: cv_c.r,
+            x: cv_c.val,
+        };
+        pedersen::open::prove(&params.open_params(), &statement, &witness, trans, &mut rng)
+    };
+
+    let e = Multilinear::eq_tilde(&r_prime).evaluate(&r);
+    let final_equals_proof = {
+        let statement = pedersen::equals::Statement {
+            comm1: (cv_ab.comm - cv_c.comm) * e,
+            comm2: sc_phase1_proof.comm_final,
+        };
+        let witness = pedersen::equals::Witness {
+            x: cv_a.val * cv_b.val - cv_c.val,
+            r1: e * (cv_ab.r - cv_c.r),
+            r2: c_hrprime_blinding,
+        };
+        pedersen::equals::prove(
+            &params.sigma_params(),
+            &statement,
+            &witness,
+            trans,
+            &mut rng,
+        )
+    };
+
+    Proof {
+        comm_w: comm_w,
+        sc_phase1_proof: sc_phase1_proof,
+        matrix_proofs: matrix_proofs.try_into().unwrap(),
+        comm_v_ab: cv_ab.comm,
+        product_proof: product_proof,
+        open_proof: open_proof,
+        final_equals_proof: final_equals_proof,
+    }
 }
 
 /// Verify a ZK Delphian proof.
