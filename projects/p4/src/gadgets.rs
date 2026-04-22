@@ -15,7 +15,15 @@ impl AllocatedBit {
         interp: &mut I,
         value: Option<bool>,
     ) -> Result<Self> {
-        todo!()
+        // Format: Allocate -> enforce constraint -> return value and allocated
+        let allocated = interp.alloc(|| "Alloc bit", Visibility::Private, || value.map(F::from))?;
+
+        interp.enforce(|| "boolean constraint", Lc::from(allocated),Lc::from(F::one()) - allocated, Lc::zero());
+
+        Ok(AllocatedBit {
+            value,
+            var: allocated,
+        })
     }
     /// Constrain and return the XOR of two allocated bits.
     pub fn xor<F: Field, I: ConstraintInterpreter<F>>(
@@ -23,8 +31,30 @@ impl AllocatedBit {
         interp: &mut I,
         other: &Self,
     ) -> Result<Self> {
-        todo!()
-    }
+        let value = if let (Some(a), Some(b)) = (self.value, other.value) {
+            Some(a ^ b)
+        } else {
+            None
+        };
+
+        let var = interp.alloc(
+            || "XOR",
+            Visibility::Private,
+            || value.map(F::from),
+        )?;
+
+        interp.enforce(
+            || "xor constraint",
+            Lc::from(self.var) * F::from(2),
+            Lc::from(other.var),
+            Lc::from(self.var) + other.var - var,
+        );
+
+        Ok(AllocatedBit {
+            value,
+            var,
+        })
+     }
 }
 
 /// A boolean value represented either as a constrained bit, its negation, or a
@@ -178,12 +208,37 @@ impl UInt32 {
         interp: &mut I,
         value: Option<u32>,
     ) -> Result<Self> {
-        todo!()
+        let mut bits = Vec::with_capacity(32);
+
+        for i in 0..32 {
+            let bit_val = value.map(|v| ((v >> i) & 1) == 1);
+            let bit = AllocatedBit::alloc(interp, bit_val)?;
+            bits.push(Boolean::Is(bit));
+        }
+
+        Ok(UInt32 {
+            bits,
+            value,
+        })
     }
 
     /// Return `self.rotate_right(shift)`.
     pub fn rotr(&self, shift: usize) -> Self {
-        todo!()
+        let mut new_bits = vec![Boolean::Const(false); 32];
+        for i in 0..32 {
+            new_bits[i] = self.bits[(i + shift) % 32].clone();
+        }
+
+        let new_value = if let Some(v) = self.value {
+            Some(v.rotate_right(shift as u32))
+        } else {
+            None
+        };
+
+        UInt32 {
+            bits: new_bits,
+            value: new_value,
+        }
     }
     /// Return a constant 32-bit word encoded in little-endian bit order.
     pub fn constant(val: u32) -> Self {
@@ -217,7 +272,14 @@ impl UInt32 {
         &self,
         interp: &mut I,
     ) -> Result<Self> {
-        todo!()
+        let r2 = self.rotr(2);
+        let r13 = self.rotr(13);
+        let r22 = self.rotr(22);
+
+        let xor_1 = r2.xor(interp, &r13)?;
+        let xor_2 = xor_1.xor(interp, &r22)?;
+
+        Ok(xor_2)
     }
 
     /// Return the SHA-256 upper-sigma function
@@ -226,7 +288,14 @@ impl UInt32 {
         &self,
         interp: &mut I,
     ) -> Result<Self> {
-        todo!()
+        let r6 = self.rotr(6);
+        let r11 = self.rotr(11);
+        let r25 = self.rotr(25);
+
+        let xor_1 = r6.xor(interp, &r11)?;
+        let xor_2 = xor_1.xor(interp, &r25)?;
+
+        Ok(xor_2)
     }
 
     /// Apply SHA-256's choose function bitwise:
@@ -237,7 +306,19 @@ impl UInt32 {
         c: &Self,
         interp: &mut I,
     ) -> Result<Self> {
-        todo!()
+        let mut bits = vec![Boolean::Const(false); 32];
+        for i in 0..32 {
+            let a_i = &a.bits[i];
+            let b_i = &b.bits[i];
+            let c_i = &c.bits[i];
+            bits[i] = Boolean::chr(a_i, b_i, c_i, interp)?;
+        }
+
+        let value = a.value.zip(b.value).zip(c.value).map(|((a, b), c)| {
+            (a & b) ^ (!a & c)
+        });
+
+        Ok(UInt32 {bits, value})
     }
 
     /// Apply SHA-256's majority function bitwise:
@@ -248,7 +329,19 @@ impl UInt32 {
         c: &Self,
         interp: &mut I,
     ) -> Result<Self> {
-        todo!()
+        let mut bits = vec![Boolean::Const(false); 32];
+        for i in 0..32 {
+            let a_i = &a.bits[i];
+            let b_i = &b.bits[i];
+            let c_i = &c.bits[i];
+            bits[i] = Boolean::maj(a_i, b_i, c_i, interp)?;
+        }
+
+        let value = a.value.zip(b.value).zip(c.value).map(|((a, b), c)| {
+            (a & b) | (a & c) | (b & c)
+        });
+
+        Ok(UInt32 {bits, value})
     }
 
     /// Build an LC equal to `sum(bits[i] * 2^i)`
@@ -277,7 +370,52 @@ impl UInt32 {
         interp: &mut I,
         other: &Self,
     ) -> Result<Self> {
-        todo!()
+        let value = self.value.zip(other.value).map(|(a, b)| a.wrapping_add(b));
+
+        let mut result_bits = Vec::with_capacity(32);
+        let mut carry = Boolean::Const(false);
+
+        for i in 0..32 {
+            let curr_self = &self.bits[i];
+            let curr_other = &other.bits[i];
+
+            // Need to do zips since these values are options so there's a chance there's nothing there, only do computation
+            // if all of the values are not None
+            let sum_val = curr_self
+                .val()
+                .zip(curr_other.val())
+                .zip(carry.val())
+                .map(|((av, bv), cv)| ((av as u8 + bv as u8 + cv as u8) % 2) == 1);
+
+            let sum_bit = AllocatedBit::alloc(interp, sum_val)?;
+            let sum_bool = Boolean::Is(sum_bit.clone());
+
+            let next_carry_val = curr_self
+                .val()
+                .zip(curr_other.val())
+                .zip(carry.val())
+                .map(|((av, bv), cv)| (av & bv) | (av & cv) | (bv & cv));
+
+            let next_carry_bit = AllocatedBit::alloc(interp, next_carry_val)?;
+            let next_carry_bool = Boolean::Is(next_carry_bit.clone());
+
+            interp.enforce(
+                || "full adder",
+                curr_self.lc::<F>() + curr_other.lc::<F>() + carry.lc::<F>()
+                    - sum_bool.lc::<F>()
+                    - (F::from(2), next_carry_bit.var),
+                Lc::from(F::one()),
+                Lc::zero(),
+            );
+
+            result_bits.push(sum_bool);
+            carry = next_carry_bool;
+        }
+
+        Ok(UInt32 {
+            bits: result_bits,
+            value,
+        })
     }
 }
 
@@ -317,6 +455,47 @@ impl<F: Field> Circuit<F> for SHA256 {
             0x5be0cd19,
         ];
         const K: [u32; 4] = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5];
-        todo!()
+        let mut words = Vec::with_capacity(self.input.len());
+
+        // Step 1:  Allocate the 256-bit private input as eight 32-bit words.
+        for w in self.input {
+            let word = UInt32::alloc(interp, w)?;  // w: Option<u32>
+            words.push(word);
+        }
+
+        // Step 2: Build the single-block message schedule used by this reduced instance.
+        // TODO: This is just stuff from online, not sure if its correct
+        let mut w = Vec::with_capacity(16);
+
+        for word in words {
+            w.push(word); // w[0..8]
+        }
+
+        w.push(UInt32::constant(0x80000000)); // w[8]
+        for _ in 9..15 {
+            w.push(UInt32::constant(0));
+        }
+        w.push(UInt32::constant(0x00000100)); // w[15]
+
+        // Step 3: Initialize the eight working variables from the SHA-256 IV.
+        // TODO: Is there a less clunky way to do this?
+        // Need to be mutable since they get re-assigned apparently
+        let mut a = UInt32::constant(IV[0]);
+        let mut b = UInt32::constant(IV[1]);
+        let mut c = UInt32::constant(IV[2]);
+        let mut d = UInt32::constant(IV[3]);
+        let mut e = UInt32::constant(IV[4]);
+        let mut f = UInt32::constant(IV[5]);
+        let mut g = UInt32::constant(IV[6]);
+        let mut h = UInt32::constant(IV[7]);
+        // Step 4:  Run `NUM_ROUNDS` compression rounds, computing `T1` and `T2` from the
+        //    usual SHA-256 ingredients (`Sigma0`, `Sigma1`, `Ch`, `Maj`, constants,
+        //    and schedule words).
+        for i in 0..NUM_ROUNDS {
+            let mut k_i = UInt32::constant(K[i]);
+
+        }
+
+        todo();
     }
 }
