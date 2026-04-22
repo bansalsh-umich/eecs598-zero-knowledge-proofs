@@ -492,10 +492,70 @@ impl<F: Field> Circuit<F> for SHA256 {
         //    usual SHA-256 ingredients (`Sigma0`, `Sigma1`, `Ch`, `Maj`, constants,
         //    and schedule words).
         for i in 0..NUM_ROUNDS {
-            let mut k_i = UInt32::constant(K[i]);
+            let k_i = UInt32::constant(K[i]);
 
+            // TODO: Check if this is correct, I couldn't find the formula online so I just used the formula that AI gave me
+            let s1 = e.big_sigma1(interp)?;
+            let ch = UInt32::chr_word(&e, &f, &g, interp)?;
+
+            let t1 = h
+                .add(interp, &s1)?
+                .add(interp, &ch)?
+                .add(interp, &k_i)?
+                .add(interp, &w[i])?;
+
+            let s0 = a.big_sigma0(interp)?;
+            let maj = UInt32::maj_word(&a, &b, &c, interp)?;
+
+            let t2 = s0.add(interp, &maj)?;
+
+            let new_h = g;
+            let new_g = f;
+            let new_f = e;
+            let new_e = d.add(interp, &t1)?;
+            let new_d = c;
+            let new_c = b;
+            let new_b = a;
+            let new_a = t1.add(interp, &t2)?;
+
+            a = new_a;
+            b = new_b;
+            c = new_c;
+            d = new_d;
+            e = new_e;
+            f = new_f;
+            g = new_g;
+            h = new_h;
         }
+        // Step 5: Add the final working state back into the IV
+        let out0 = a.add(interp, &UInt32::constant(IV[0]))?;
+        let out1 = b.add(interp, &UInt32::constant(IV[1]))?;
+        let out2 = c.add(interp, &UInt32::constant(IV[2]))?;
+        let out3 = d.add(interp, &UInt32::constant(IV[3]))?;
+        let out4 = e.add(interp, &UInt32::constant(IV[4]))?;
+        let out5 = f.add(interp, &UInt32::constant(IV[5]))?;
+        let out6 = g.add(interp, &UInt32::constant(IV[6]))?;
+        let out7 = h.add(interp, &UInt32::constant(IV[7]))?;
 
-        todo();
+        // Step 6: Allocate the expected digest as public output and constrain it to match
+        //    the computed state.
+        let final_words = vec![out0, out1, out2, out3, out4, out5, out6, out7];
+
+        for (expected, computed) in self.output.into_iter().zip(final_words.into_iter()) {
+            let public_var = interp.alloc(
+                || "public digest word",
+                Visibility::Public,
+                || Some(F::from(expected as u64)),
+            )?;
+
+            interp.enforce(
+                || "digest word equality",
+                UInt32::pack_lc::<F>(&computed.bits),
+                Lc::from(F::one()),
+                Lc::from(public_var),
+            );
+        }
+        // Returns nothing
+        Ok(())
     }
 }
