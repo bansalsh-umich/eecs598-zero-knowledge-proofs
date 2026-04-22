@@ -155,7 +155,35 @@ impl<F: Field, const IS_PROVER: bool> ConstraintInterpreter<F> for Matrixifier<F
         vis: Visibility,
         constructor: impl Thunk<Output = Option<impl Into<F>>>,
     ) -> Result<Variable> {
-        todo!()
+        let var;
+
+        if vis == Visibility::Public {
+            let idx = self.cur_pub;
+            self.cur_pub += 1;
+
+            var = Variable::new_unchecked(Visibility::Public, idx);
+
+            let value = constructor()
+                .ok_or_else(|| format_err!("public variable missing assignment: {}", annotation().as_ref()))?
+                .into();
+
+            self.pub_vars.push((var.get_index(), value));
+        } else { // means Visibility is private
+            let idx = self.cur_priv;
+            self.cur_priv += 1;
+
+            var = Variable::new_unchecked(Visibility::Private, idx);
+
+            if IS_PROVER {
+                let value = constructor()
+                    .ok_or_else(|| format_err!("private variable missing assignment: {}", annotation().as_ref()))?
+                    .into();
+
+                self.priv_vars.push((var.get_index(), value));
+            }
+        }
+
+        Ok(var)
     }
 
     /// Add one multiplicative constraint to the internal row lists.
@@ -167,7 +195,9 @@ impl<F: Field, const IS_PROVER: bool> ConstraintInterpreter<F> for Matrixifier<F
         b: Lc<F>,
         c: Lc<F>,
     ) {
-        todo!()
+        self.a_rows.push(a);
+        self.b_rows.push(b);
+        self.c_rows.push(c);
     }
 }
 
@@ -192,7 +222,50 @@ impl<F: Field, const IS_PROVER: bool> Matrixifier<F, IS_PROVER> {
     /// sparse-matrix form, while preserving the public/private column convention described on
     /// [`Matrixifier`].
     pub fn into_statement(self) -> Statement<F> {
-        todo!()
+        let rows = self.a_rows.len();
+        let cols = self.cur_pub + self.cur_priv;
+
+        let mut a_entries = Vec::new();
+        let mut b_entries = Vec::new();
+        let mut c_entries = Vec::new();
+
+        for (row_idx, lc) in self.a_rows.into_iter().enumerate() {
+            for (coeff, var) in lc {
+                let col_idx = match var.visibility() {
+                    Visibility::Public => var.get_index(),
+                    Visibility::Private => self.cur_pub + var.get_index(),
+                };
+                a_entries.push((row_idx, col_idx, coeff));
+            }
+        }
+
+        for (row_idx, lc) in self.b_rows.into_iter().enumerate() {
+            for (coeff, var) in lc {
+                let col_idx = match var.visibility() {
+                    Visibility::Public => var.get_index(),
+                    Visibility::Private => self.cur_pub + var.get_index(),
+                };
+                b_entries.push((row_idx, col_idx, coeff));
+            }
+        }
+
+        for (row_idx, lc) in self.c_rows.into_iter().enumerate() {
+            for (coeff, var) in lc {
+                let col_idx = match var.visibility() {
+                    Visibility::Public => var.get_index(),
+                    Visibility::Private => self.cur_pub + var.get_index(),
+                };
+                c_entries.push((row_idx, col_idx, coeff));
+            }
+        }
+
+        let a = SparseMatrix::from_entries(rows, cols, a_entries);
+        let b = SparseMatrix::from_entries(rows, cols, b_entries);
+        let c = SparseMatrix::from_entries(rows, cols, c_entries);
+
+        let x = SparseVector::from_entries(self.cur_pub, self.pub_vars.into_iter());
+
+        ([a, b, c], x)
     }
 }
 
@@ -204,6 +277,8 @@ impl<F: Field> ProverMatrixifier<F> {
     /// with the private assignment vector aligned with the private columns of
     /// that statement.
     pub fn into_statement_and_witness(mut self) -> (Statement<F>, Witness<F>) {
-        todo!()
+        let witness = SparseVector::from_entries(self.cur_priv, self.priv_vars.iter().cloned());
+        let stmt = self.into_statement();
+        (stmt, witness)
     }
 }
