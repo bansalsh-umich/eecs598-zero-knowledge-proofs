@@ -1,0 +1,216 @@
+%% HOW TO USE THIS TEMPLATE:
+%%
+%% Ensure that you replace "YOUR NAME HERE" with your own name, in the
+%% \studentname command below.  Also ensure that the "answers" option
+%% appears within the square brackets of the \documentclass command,
+%% otherwise latex will suppress your solutions when compiling.
+%%
+%% Type your solution to each problem part within
+%% the \begin{solution} \end{solution} environment immediately
+%% following it.  Use any of the macros or notation from the
+%% header.tex that you need, or use your own (but try to stay
+%% consistent with the notation used in the problem).
+%%
+%% If you have problems compiling this file, you may lack the
+%% header.tex file (available on the course web page), or your system
+%% may lack some LaTeX packages.  The "exam" package (required) is
+%% available at:
+%%
+%% http://mirror.ctan.org/macros/latex/contrib/exam/exam.cls
+%%
+%% Other packages can be found at ctan.org, or you may just comment
+%% them out (only the exam and ams* packages are absolutely required).
+
+
+% the "answers" option causes the solutions to be printed
+\documentclass[11pt,addpoints,answers]{exam}
+
+\usepackage{amsmath,amsfonts,amssymb,amsthm,mathtools}
+% any of the following packages may be safely omitted if they are not
+% available on your system (but they should be)
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage{hyperref}
+\usepackage{pdfsync}
+\usepackage{microtype}
+\usepackage[ff,primitives]{cryptocode}
+
+% required macros -- canonical course header files
+\input{../common/notation.tex}
+\input{../common/zk-notation.tex}
+\input{../common/environments.tex}
+\input{../common/logistics.tex}
+
+% VARIABLES
+
+\newcommand{\hwnum}{2}
+\newcommand{\duedate}{April 10} % changing this does not change the
+% actual due date :)
+\newcommand{\studentname}{YOUR NAME HERE}
+
+% END OF SUPPLIED VARIABLES
+
+\hwheader                       % execute homework commands
+
+\begin{document}
+
+\pagestyle{head} % put header on every page
+
+\noindent This homework is due by \textbf{11:59pm on \duedate} via the
+\href{\autograderurl}{Autograder
+	page}.  Start early!
+
+\medskip
+\noindent \textbf{Instructions.} Solutions must be \emph{typed} in \LaTeX\ (a template for this homework is available on
+the course web page).  Your work will be graded on \emph{correctness},
+\emph{clarity}, and \emph{concision}.  You should only submit work
+that you believe to be correct; if you cannot solve a problem
+completely, you will get significantly more partial credit if you
+clearly identify the gap(s) in your solution.  It is good practice to
+start any long solution with an informal (but accurate) ``proof
+summary'' that describes the main idea.
+
+\medskip
+\noindent You may consult external sources.  However, you must \textbf{\emph{write your own solutions}} and \textbf{\emph{list your sources}} for each problem. If you turn in a proof you cannot explain orally, you will fail the assignment.
+
+% QUESTIONS START HERE.  WRITE YOUR SOLUTIONS WITHIN THE "solution"
+% ENVIRONMENTS FOLLOWING EACH QUESTION.
+
+
+\begin{questions}
+	\question \emph{(The eq-extension lemma.)} Prove the following lemma, which we used in building the Delphian PIOP.
+	\begin{lemma*}
+		Let $g:\; \F^n \to \F$ be a polynomial.  Let $\eq :\; \bits^n\times\bits^n\to\bits$ be the function that returns 1 if its two $n$-bit inputs are equal component-wise, and 0 otherwise, and let $\eqext$ be the multilinear extension of $\eq$.  If $\exists\, y \in \bits^n$ such that $g(y) \neq 0$, then
+		$$
+			\Pr_{r\getsr\F^n}\left[\sum\limits_{x\in\bits^n} \eqext(r, x)\, g(x) = 0\right] \leq \frac{n}{|\F|}\; .
+		$$
+	\end{lemma*}
+
+	Note that the sum only evaluates $g$ at Boolean inputs.
+
+	\begin{solution}
+
+	\end{solution}
+	\question \emph{(Verifiable pattern matching.)}
+
+	In this problem you will construct a sumcheck-based protocol for verifiable pattern matching with wildcards. The protocol is based on a (non-cryptographic) randomized fingerprinting technique due to Adam Kalai, ``Efficient pattern matching with don't-cares'' (SODA 2002).
+
+	\heading{Setup} Let $\F$ be a finite field.  A \emph{text} is a vector $T \in \F^N$ with $N = 2^n$.  A \emph{pattern} is a vector $P \in (\F \cup \{*\})^m$ with $m = 2^\ell$ for some $\ell \leq n$, where $*$ denotes a \emph{wildcard} that matches any field element.  We say $P$ \emph{matches} $T$ at position $j$ (for $0 \leq j \leq N - m$) if for every $i \in \{0, \ldots, m-1\}$, either $P_i = *$ or $T[j+i] = P_i$.
+
+
+	\heading{The Kalai fingerprint} Given $T$ and $P$, the following randomized test checks whether $P$ matches $T$ at any position. First, compute the vector $\vecr\in\F^m$ using the rule that $\vecr_i = 0$ if $P_i = *$ and $\vecr_i \getsr \F$ otherwise.
+	Compute the \emph{pattern fingerprint} $t = \sum_{i\in\{0,\ldots,m-1\}:\, P_i \neq *} \vecr_i \cdot P_i$. Then, for each position $j$, compute the fingerprint $s(j)$ as
+	$$
+		s(j) \;=\; \sum_{i=0}^{m-1} \vecr_i \cdot T[j+i]\,.
+	$$
+	Output \textsf{match} if $s(j) = t$ for any $j$ and \textsf{mismatch} otherwise. (It is not needed for this problem, but a beautiful fact about the Kalai fingerprint is that $s(j)$ can be computed for all $j$ in only $O(N\log m)$ field operations by expressing the vector of $s(j)$s as the convolution of the text and $\vecr$.)
+
+	\begin{parts}
+		\part Prove that if $P$ matches $T$ at position $j$, the Kalai fingerprint always outputs \textsf{match}.  Conversely, prove that if $P$ does not match $T$ at position $j$ (i.e., there exists a non-wildcard position $i_0$ with $T[j+i_0] \neq P_{i_0}$), then
+		$$
+			\Pr[s(j)=t] \;\leq\; \frac{1}{|\F|}\,.
+		$$
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part A prover holds $T$ and a commitment $C = \commit(\widetilde{T})$ to the multilinear extension of $T$ under a multilinear PCS. It also knows the opening $\gamma$ of $C$.  Both prover and verifier know $C$, $P$, and $N$.  The prover wishes to convince the verifier that $P$ matches $T$ at a position $j^*$ (which the prover discloses).
+		Using the Kalai fingerprint and a single instance of the sumcheck protocol, construct a protocol that verifies $P$ matches $T$ at position $j^*$.  The prover should send $j^*$ to the verifier. Your protocol should require only \emph{one} evaluation opening of the commitment $C$.  State the degree per round, the number of rounds, the prover's work, and the verifier's work. Prove the soundness of your protocol.
+
+		\emph{Hint: define a ``selector'' vector $\alpha \in \F^N$, computable by the verifier from $\vecr$ and $j^*$, such that $\langle \alpha, T \rangle = s(j^*)$.  Then express this inner product as a sum over the Boolean hypercube $\bits^n$ involving multilinear extensions.}
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part At the conclusion of your protocol from part~(b), the verifier will hold a random point $\rho \in \F^n$ and need the values $\widetilde{\alpha}(\rho)$ and $\widetilde{T}(\rho)$, where $\widetilde{\alpha}$ and $\widetilde{T}$ denote the multilinear extensions of $\alpha$ and $T$ respectively.  Show how the verifier can compute $\widetilde{\alpha}(\rho)$ itself without doing work proportional to the text size $N$. This makes our protocol succinct in both verifier computation and proof size (as long as the PCS is succinct).
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part \emph{(Extra credit.)} Suppose the prover wishes to prove that a match exists \emph{without revealing the position $j^*$}. Describe an extension of your protocol above that hides $j^*$. You need not prove rigorously that $j^*$ is hidden, but you should sketch a convincing argument.
+
+		\begin{solution}
+
+		\end{solution}
+	\end{parts}
+
+	\question \emph{(Lariat: a lookup argument from log-derivatives.)}
+
+	A \emph{lookup argument} lets a prover convince a verifier that every entry of a vector $\vec{a} \in \F^m$ appears in a \emph{table} $\vec{t} \in \F^N$ (where all table entries $t_j$ are distinct).  In this problem you will analyze and then build Lariat, a lookup argument based on log-derivatives.
+
+	\heading{Setup and main idea}  Let $\vec{t} = (t_1, \ldots, t_N) \in \F^N$ with all $t_j$ distinct be a table, and let $\vec{a} = (a_1, \ldots, a_m) \in \F^m$ be a lookup vector.  A \emph{multiplicity vector} for $\vec{a}$ with respect to $\vec{t}$ is a vector $\vec{e} \in \Z_{\geq 0}^N$ where $e_j = |\{i \in [m] : a_i = t_j\}|$ counts how many times each table entry appears in $\vec{a}$.
+
+	The key algebraic observation behind Lariat is the following.  If every $a_i$ lies in $\vec{t}$ and $\vec{e}$ is the correct multiplicity vector, then the \emph{log-derivative equation}
+	\begin{equation}
+		\sum_{i=1}^{m} \frac{1}{a_i - r} \;=\; \sum_{j=1}^{N} \frac{e_j}{t_j - r} \tag{$\star$} \label{eq:logderiv}
+	\end{equation}
+	holds as an identity of rational functions in $r$.  Conversely, as you will show below, if the lookup relation fails then~\eqref{eq:logderiv} holds for at most $m + N$ values of $r \in \F$.  So checking~\eqref{eq:logderiv} at a random $r \getsr \F$ (with $r \notin \{a_1,\ldots,a_m\}\cup\{t_1,\ldots,t_N\}$) is a sound randomized test for the lookup relation.  For parts~(b) and~(c), you may assume either that $\mathrm{char}(\F) > m$ or, equivalently, that multiplicities are interpreted as elements of $\F$ and ``incorrect'' means unequal in $\F$.
+
+	\begin{parts}
+		\part Prove the following:
+		\begin{lemma*}
+			Let $\vec{a} \in \F^m$ and $\vec{t} \in \F^N$ with all $t_j$ distinct.  If there exists $i^*$ such that $a_{i^*} \notin \{t_1, \ldots, t_N\}$, then for \emph{any} choice of $\vec{e} \in \F^N$, equation~\eqref{eq:logderiv} holds for at most $m + N$ values of $r \in \F$.
+		\end{lemma*}
+
+		\emph{Hint: view both sides of~\eqref{eq:logderiv} as rational functions in $r$ and consider their poles.}
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part Now suppose that $a_i \in \{t_1, \ldots, t_N\}$ for all $i$, but the multiplicity vector is incorrect: $e_j \neq |\{i : a_i = t_j\}|$ for some $j$.  Show that~\eqref{eq:logderiv} still holds for at most $m + N$ values of $r \in \F$.
+
+		\emph{Hint: use partial fraction decomposition and compare residues at the poles $r = t_j$.}
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part Now suppose $m = 2^\ell$ and $N = 2^n$.  Design a PIOP (polynomial interactive oracle proof) that checks~\eqref{eq:logderiv} using sumcheck.  Work in the following model: the table $\vec{t}$ is public, the verifier has oracle access to the multilinear extensions of $\vec{a}$ and $\vec{e}$ (i.e., it can query $\widetilde{a}(\rho)$ and $\widetilde{e}(\rho)$ at any $\rho$ of its choosing), and the prover may send additional oracle polynomials.  Describe what auxiliary oracle polynomials the prover sends, what sumcheck claims are made, and how the verifier checks them.  State the number of sumcheck rounds and the degree per round.
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part Give an alternative to the PIOP from part~(c): design an R1CS instance that is satisfiable if and only if~\eqref{eq:logderiv} holds for a given $r$.  The R1CS witness should encode $\vec{a}$, $\vec{e}$, and any auxiliary values you need.  Estimate the number of constraints needed.
+
+		Also explain how the prover can efficiently compute the full witness---including all auxiliary values---with a \emph{single} multiplicative inverse computation in $\F$ (plus other cheaper operations).  You may find it helpful to recall an optional task from Project~1.
+
+		\begin{solution}
+
+		\end{solution}
+	\end{parts}
+
+	\question \emph{A univariate PCS from a multilinear PCS.}
+
+	This question is due to Dan Boneh and Binyi Chen. Recall that a \emph{multilinear polynomial commitment scheme} (multilinear PCS) lets one commit to a multilinear polynomial $g \in \F^{(\leq 1)}[X_1, \ldots, X_k]$---that is, a polynomial of individual degree at most~1 in each of $k$ variables---by computing a commitment $C_g$.  Later, for any point $(r_1, \ldots, r_k) \in \F^k$, the committer can prove that $g(r_1, \ldots, r_k) = v$ for a claimed value $v \in \F$.
+
+	Suppose you are given such a multilinear PCS for polynomials in $\F^{(\leq 1)}[X_1, \ldots, X_k]$.  Show how to use it to construct a \emph{univariate} PCS for polynomials in $\F^{(\leq d)}[X]$ (univariate polynomials over $\F$ of degree at most~$d$), where $d = 2^k - 1$.
+
+	\begin{parts}
+		\part Explain how to commit to a polynomial $f \in \F^{(\leq d)}[X]$.
+
+		\emph{Hint: show how to map $f$ to a multilinear polynomial $g \in \F^{(\leq 1)}[X_1, \ldots, X_k]$, and then commit to $g$ using the multilinear PCS.}
+
+		\begin{solution}
+
+		\end{solution}
+
+		\part Explain how to open the committed polynomial at a point $x \in \F$.  That is, given $x \in \F$ and a claimed value $y = f(x)$, describe a protocol between prover and verifier that proves $f(x) = y$ using only the opening procedure of the multilinear PCS.
+
+		\begin{solution}
+
+		\end{solution}
+	\end{parts}
+
+\end{questions}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
