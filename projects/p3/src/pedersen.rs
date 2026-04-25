@@ -84,7 +84,23 @@ pub mod open {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        todo!()
+        trans.append_message("statement", statement);
+        // Reference: https://www.zkdocs.com/docs/zkdocs/commitments/pedersen/#proof-of-knowledge-of-secret
+        // First generate a temporary commitment
+        let t1 = E::Scalar::random(&mut rng);
+        let t2 = E::Scalar::random(&mut rng);
+        let temporary_commitment = commit(t1, t2, &params.generators);
+        trans.append_message("R", temporary_commitment);
+
+        let c = trans.get_challenge("challenge");
+        let z1 = witness.x * c + t1;
+        let z2 = witness.r * c + t2;
+
+        return Proof {
+            c,
+            z_x: z1,
+            z_r: z2,
+        };
     }
 
     /// Verify a proof of knowledge of a Pedersen commitment opening.
@@ -94,7 +110,16 @@ pub mod open {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let [g, h] = params.generators;
+        let temporary_commitment = E::msm(&[pf.z_x, pf.z_r, -pf.c], &[g, h, statement.commitment]);
+        trans.append_message("R", temporary_commitment);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+        anyhow::ensure!(c == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
@@ -152,7 +177,29 @@ pub mod equals {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let tx = E::Scalar::random(&mut rng);
+        let tr1 = E::Scalar::random(&mut rng);
+        let tr2 = E::Scalar::random(&mut rng);
+
+        let R1 = commit(tx, tr1, &params.generators);
+        trans.append_message("R1", R1);
+
+        let R2 = commit(tx, tr2, &params.generators);
+        trans.append_message("R2", R2);
+
+        let c = trans.get_challenge("challenge");
+        let zx = witness.x * c + tx;
+        let zr1 = witness.r1 * c + tr1;
+        let zr2 = witness.r2 * c + tr2;
+
+        return Proof {
+            c,
+            z_x: zx,
+            z_r1: zr1,
+            z_r2: zr2,
+        };
     }
 
     /// Verify a proof that two commitments hide the same value.
@@ -162,7 +209,17 @@ pub mod equals {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let R1 = commit(pf.z_x, pf.z_r1, &params.generators) - statement.comm1 * pf.c;
+        trans.append_message("R1", R1);
+        let R2 = commit(pf.z_x, pf.z_r2, &params.generators) - statement.comm2 * pf.c;
+        trans.append_message("R2", R2);
+
+        let challenge: E::Scalar = trans.get_challenge("challenge");
+        anyhow::ensure!(challenge == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
@@ -231,7 +288,39 @@ pub mod product {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let [g, h] = params.generators;
+
+        let b1 = E::Scalar::random(&mut rng);
+        let b2 = E::Scalar::random(&mut rng);
+        let b3 = E::Scalar::random(&mut rng);
+        let b4 = E::Scalar::random(&mut rng);
+        let b5 = E::Scalar::random(&mut rng);
+
+        let R = commit(b1, b2, &params.generators);
+        let beta = commit(b3, b4, &params.generators);
+        let gamma = commit(b3, b5, &[statement.comm_x, h]);
+        trans.append_message("R", R);
+        trans.append_message("beta", beta);
+        trans.append_message("gamma", gamma);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+
+        let zx = witness.x * c + b1;
+        let zrx = witness.rx * c + b2;
+        let zy = witness.y * c + b3;
+        let zry = witness.ry * c + b4;
+        let zprod = (witness.rz - witness.rx * witness.y) * c + b5;
+
+        Proof {
+            c,
+            z_x: zx,
+            z_rx: zrx,
+            z_y: zy,
+            z_ry: zry,
+            z_prod: zprod,
+        }
     }
 
     /// Verify a proof that `z = x * y` for three committed values.
@@ -241,7 +330,24 @@ pub mod product {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        trans.append_message("statement", statement);
+        let [g, h] = params.generators;
+
+        let R = commit(pf.z_x, pf.z_rx, &params.generators) - statement.comm_x * pf.c;
+        let beta = commit(pf.z_y, pf.z_ry, &params.generators) - statement.comm_y * pf.c;
+        let gamma = E::msm(
+            &[pf.z_y, pf.z_prod, -pf.c],
+            &[statement.comm_x, h, statement.comm_z],
+        );
+        trans.append_message("R", R);
+        trans.append_message("beta", beta);
+        trans.append_message("gamma", gamma);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+
+        anyhow::ensure!(c == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 
@@ -308,7 +414,44 @@ pub mod dot_product {
         trans: &mut Transcript,
         mut rng: impl rand::Rng,
     ) -> Proof<E> {
-        todo!()
+        trans.append_message("statement", statement);
+
+        let [_, h] = params.scalar_gens;
+
+        let mut d = Vec::new();
+        d.reserve(params.vec_gens.len());
+        for _ in 0..params.vec_gens.len() {
+            d.push(E::Scalar::random(&mut rng));
+        }
+
+        let o1 = E::Scalar::random(&mut rng);
+        let C1 = vector_commit(&d, o1, &params.vec_gens, h);
+        trans.append_message("C1", C1);
+
+        let o2 = E::Scalar::random(&mut rng);
+        let da = inner_product(&d, &statement.a);
+        let C2 = commit(da, o2, &params.scalar_gens);
+        trans.append_message("C2", C2);
+
+        let c: E::Scalar = trans.get_challenge("challenge");
+
+        debug_assert_eq!(witness.x.len(), d.len());
+        let zx: Vec<_> = witness
+            .x
+            .iter()
+            .zip(d.iter())
+            .map(|(&x, &d)| c * x + d)
+            .collect();
+
+        let zrx = c * witness.r_x + o1;
+        let zrv = c * witness.r_result + o2;
+
+        Proof {
+            c,
+            z_vec: zx,
+            z_beta: zrv,
+            z_delta: zrx,
+        }
     }
 
     /// Verify a proof that `y = <a, x>` for a committed vector `x` and committed
@@ -319,7 +462,21 @@ pub mod dot_product {
         pf: &Proof<E>,
         trans: &mut Transcript,
     ) -> Result<()> {
-        todo!()
+        trans.append_message("statement", statement);
+        let [g, h] = params.scalar_gens;
+
+        let C1 =
+            vector_commit(&pf.z_vec, pf.z_delta, &params.vec_gens, h) - statement.comm_x * pf.c;
+        let product = inner_product(&pf.z_vec, &statement.a);
+        let C2 = commit(product, pf.z_beta, &params.scalar_gens) - statement.comm_result * pf.c;
+        trans.append_message("C1", C1);
+        trans.append_message("C2", C2);
+
+        let e: E::Scalar = trans.get_challenge("challenge");
+
+        anyhow::ensure!(e == pf.c, "verification failed");
+
+        Ok(())
     }
 }
 

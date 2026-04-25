@@ -469,6 +469,7 @@ dependencies = [
  "p1",
  "proptest",
  "rand",
+ "serde",
  "sfs-bigint",
  "tokio",
 ]
